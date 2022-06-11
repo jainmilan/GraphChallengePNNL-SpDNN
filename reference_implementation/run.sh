@@ -14,6 +14,7 @@ echo "Partition: ${1}"
 echo "Number of GPUs: ${2}"
 echo "Number of CPUs: ${3}"
 echo "Version: ${4}"
+echo "Neurons: ${5}"
 
 module load cuda/11.4
 ulimit -u 16000
@@ -26,5 +27,5 @@ conda activate horovod
 
 python --version
 # echo ${PWD}/SparseDNN/python/scipy/inferenceReLUvec.py
-python -u ${PWD}/SparseDNN/python/${4}/runSparseDNNchallenge.py
+python -u ${PWD}/SparseDNN/python/${4}/runSparseDNNchallenge.py --neurons ${5}
 

@@ -1,6 +1,16 @@
 import time
+import argparse
 import numpy as np
 from scipy.sparse import csr_matrix
+
+from readTriples import readTriples
+from inferenceReLUvec import inferenceReLUvec
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--neurons', default=1024, choices=[1024, 4096, 16384, 65536], help="Number of neurons for training [options: 1024, 4096, 16384, 65536], defaults to 1024.", type=int)
+
+args = parser.parse_args()
+
 # Set locations of files.
 basePath = '/qfs/projects/pacer/milan/data/SparseDNNChallenge/'
 
@@ -10,7 +20,7 @@ layerFile = basePath + 'DNN/neuron';
 
 # Select DNN to run.
 #Nneuron = [1024, 4096, 16384, 65536];
-Nneuron = [1024];
+Nneuron = [args.neurons];
 SAVECAT = False    # Overwrite truth categories.
 READTSV = True    # Read input and layers from .tsv files.
 READMAT = True    # Redd input and layers from .mat files.
@@ -21,9 +31,6 @@ maxLayers = [120];
 
 # Set DNN bias.
 neuralNetBias = [-0.3,-0.35,-0.4,-0.45];
-
-from readTriples import readTriples
-from inferenceReLUvec import inferenceReLUvec
 
 # Loop over each DNN.
 for i in range (len(Nneuron)):
@@ -40,12 +47,8 @@ for i in range (len(Nneuron)):
         # featureVectors = z
         pass
 
-    # print(featureVectors)
-    # print(featureVectors.shape)
     featureVectors.resize((featureVectors.shape[0], Nneuron[i]))
-    # featureVectors[-1, Nneuron[i]] = 0       # Pad matrix.
     NfeatureVectors = featureVectors.shape[0]
-    # print(featureVectors.shape)
     
 # Read layers.
 for j in range(len(maxLayers)):
@@ -56,8 +59,7 @@ for j in range(len(maxLayers)):
         trueCategories = np.genfromtxt(filename)
         # FIXING THE INDEXING: True Categories are +1
         trueCategories = trueCategories - 1
-        # print(trueCategories)
-    
+        
     DNNedges = 0;
     layers = [];
     bias = [];
@@ -74,9 +76,6 @@ for j in range(len(maxLayers)):
         DNNedges = DNNedges + layers[k].count_nonzero();
         bias.append(csr_matrix(np.ones((1, Nneuron[i]))) * neuralNetBias[i])
     
-    # print(layers)
-    # print(bias)
-    # print(DNNedges)
     readLayerTime = time.perf_counter() - tic
     readLayerRate = DNNedges/readLayerTime;
 
@@ -94,17 +93,9 @@ for j in range(len(maxLayers)):
     print('[INFO] Run time (sec): %f, run rate (edges/sec): %f' %(challengeRunTime, challengeRunRate));
 
     # Compute categories from scores.
-    # print(scores.sum(axis=1).shape)
     scores_sum = scores.sum(axis=1)
     categories, col = scores_sum.nonzero()
-    # categories = categories + 1
     val = scores_sum
-    # print(categories)
-    # print(categories.shape, col.shape, val.shape)
-    # print(categories[:5], col[:5], val[:5])
-    # print(trueCategories.shape, np.zeros_like(trueCategories).shape)
-    # print(categories.shape, np.zeros_like(categories).shape)
-
 
     if SAVECAT:
     #   StrFileWrite(sprintf('%d\n',categories),[categoryFile num2str(Nneuron(i)) '-l' num2str(maxLayers(j)) '-categories.tsv']);

@@ -16,22 +16,13 @@ def inferenceReLUvec(W, bias, Y0):
         # % Propagate through layer.
         # % Note: using graph convention of A(i,j) means connection from i *to* j,
         # % that requires *left* multiplication feature *row* vectors.
-        # print(W[i].shape)
-        # print(Y.shape)
         Z = Y * W[i]
         b = bias[i]
-        # print(Z.shape)
-        # print(b.T.shape)
-        # print(Z.multiply(b).shape)
-        # sys.exit(b.shape)
-
+        
         # Apply bias to non-zero entries.
         # !!!! COULD BE MADE EFFICIENT
         Y = Z + (Z.astype('bool').astype('float').multiply(b))
-        # Y.sort_indices()
         
-        # sys.exit(Y.tocsr()[:3, :6])
-
         # Threshold negative values.
         Y[Y < 0] = 0
 
