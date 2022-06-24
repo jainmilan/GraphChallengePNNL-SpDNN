@@ -1,4 +1,5 @@
 import numpy as np
+import cupy as cp
 
 def inferenceReLUvec(W, bias, Y0):
     
@@ -12,16 +13,17 @@ def inferenceReLUvec(W, bias, Y0):
         # % Propagate through layer.
         # % Note: using graph convention of A(i,j) means connection from i *to* j,
         # % that requires *left* multiplication feature *row* vectors.
-        Z = Y * W[i]
+        dY = cp.array(Y, order='f')
+        # (60000,1024),  (1024, 1024)
+        Z = cp.cusparse.spmm(W[i], dY)#, transa=False, transb=False)
         b = bias[i]
 
         # Apply bias to non-zero entries.
-        Y = Z + (np.array(np.full((Z), True), dtype=float) * b)
+        Y = Z + cp.multiply(Z.astype('bool').astype('float'), b)
 
         # Threshold negative values.
-        Y[Y < 0] = 0
-
+        cp.where(Y < 0, 0, Y)
         # Threshold maximum values.
-        Y[Y > YMAX] = YMAX
+        cp.where(Y > YMAX, YMAX, Y)
 
     return Y

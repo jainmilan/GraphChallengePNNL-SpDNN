@@ -1,7 +1,7 @@
-from read_triples import readTriples
+from read_triples import read_input, read_weight
 from inference import inferenceReLUvec
-import numpy as np
-from scipy import sparse as sps
+from cupyx.scipy import sparse
+import cupy as cp
 import time
 
 base_path = '/qfs/projects/pacer/graphchallenge2022/'
@@ -21,31 +21,27 @@ neuralNetBias = [-0.3, -0.35, -0.4, -0.45]
 
 for i in range(len(Nneuron)):
     if READTSV:
-        featureVectors = readTriples(f"{base_path}{inputFile}{Nneuron[i]}.tsv")
+        featureVectors = read_input(f"{base_path}{inputFile}{Nneuron[i]}.tsv")
     if READMAT:
         pass
 
-    # pad matrix
-    NfeatureVectors = featureVectors.size
+    NfeatureVectors = featureVectors.shape[1]
 
     for j in range(len(maxLayers)):
         if not(SAVECAT):
-            trueCategories = np.genfromtxt(f"{base_path}{categoryFile}{Nneuron[i]}-l{maxLayers[j]}-categories.tsv")
+            trueCategories = cp.genfromtxt(f"{base_path}{categoryFile}{Nneuron[i]}-l{maxLayers[j]}-categories.tsv")
 
         DNNedges = 0
-        layers = {}
-        bias = {}
+        layers = [] 
+        bias = []
         tic = time.time()
-        for k in range(1, maxLayers[j]):
+        for k in range(maxLayers[j]):
             if READTSV:
-                layers[k] = readTriples(f"{base_path}{layerFile}{Nneuron[i]}/n{Nneuron[i]}-l{k}.tsv")
+                layers.append(read_weight(f"{base_path}{layerFile}{Nneuron[i]}/n{Nneuron[i]}-l{k+1}.tsv"))
             if READMAT:
                 pass
-        print(k)
-        if k == 119:
-            print(layers[k])
-        DNNedges = DNNedges + np.count_nonzero(layers[k])
-        bias[k] = sps.csr_matrix(np.ones((1, Nneuron[i]))) * neuralNetBias[i]
+            DNNedges += layers[k].nnz
+            bias.append(cp.multiply(cp.ones((Nneuron[i], 1)), neuralNetBias[i]))
     readLayerTime = time.time() - tic
     readLayerRate = DNNedges / readLayerTime
 
@@ -54,19 +50,23 @@ for i in range(len(Nneuron)):
 
     tic = time.time()
     scores = inferenceReLUvec(layers, bias, featureVectors)
-    challengeRunTime = time.tine() - tic
+    challengeRunTime = time.time() - tic
 
     challengeRunRate = NfeatureVectors * DNNedges / challengeRunTime
     print(f"Run time (sec): {challengeRunTime}, run rate (edges/sec): {challengeRunRate}")
 
     # Compute categories from scores
-    categories, col, val = np.where(sum(scores, 2))
+    scores_sum = scores.sum(axis=1)
+    categories = scores_sum.nonzero()[0]
+    val = scores_sum
 
     if SAVECAT:
         pass
     else:
-        categoryDiff = sps.csr_matrix(trueCategories, 1, 1, NfeatureVectors, 1) - sps.csr_matrix(categories, 1, 1, NfeatureVectors, 1)
-        if np.count_nonzero(categoriDiff):
+        categoryDiff = sparse.csr_matrix((cp.ones_like(trueCategories), (trueCategories, cp.zeros_like(trueCategories))), shape=(NfeatureVectors, 1), dtype='float32') - \
+                sparse.csr_matrix((cp.ones_like(categories), (categories, cp.zeros_like(categories))), shape=(NfeatureVectors, 1), dtype='float32')
+        pc_sparse = sparse.csr_matrix((cp.ones_like(categories), (categories, cp.zeros_like(categories))), shape=(NfeatureVectors, 1), dtype='float32')
+        if (categoryDiff.count_nonzero()):
             print ('Challenge FAILED')
         else:
             print ('Challenge PASSED')
