@@ -10,12 +10,12 @@ inputFile = './MNIST/sparse-images-'
 categoryFile = './DNN/neuron'
 layerFile = './DNN/neuron'
 
-Nneuron = [1024] # [1024, 4096, 16384, 65536]
+Nneuron = [1024 * 1] # [1024, 4096, 16384, 65536]
 SAVECAT = 0
 READTSV = 1
 READMAT = 0
 
-maxLayers = [120] # * [ 1, 4, 16]
+maxLayers = [120 * 1] # * [ 1, 4, 16]
 
 neuralNetBias = [-0.3, -0.35, -0.4, -0.45]
 
