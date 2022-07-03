@@ -30,6 +30,8 @@ for i in range(len(Nneuron)):
     for j in range(len(maxLayers)):
         if not(SAVECAT):
             trueCategories = cp.genfromtxt(f"{base_path}{categoryFile}{Nneuron[i]}-l{maxLayers[j]}-categories.tsv")
+            # index adjustment
+            trueCategories -= 1
 
         DNNedges = 0
         layers = [] 
@@ -56,7 +58,7 @@ for i in range(len(Nneuron)):
     print(f"Run time (sec): {challengeRunTime}, run rate (edges/sec): {challengeRunRate}")
 
     # Compute categories from scores
-    scores_sum = scores.sum(axis=1)
+    scores_sum = scores.sum(axis=0)
     categories = scores_sum.nonzero()[0]
     val = scores_sum
 
@@ -68,6 +70,7 @@ for i in range(len(Nneuron)):
         pc_sparse = sparse.csr_matrix((cp.ones_like(categories), (categories, cp.zeros_like(categories))), shape=(NfeatureVectors, 1), dtype='float32')
         if (categoryDiff.count_nonzero()):
             print ('Challenge FAILED')
+            print(categoryDiff.count_nonzero())
         else:
             print ('Challenge PASSED')
 
