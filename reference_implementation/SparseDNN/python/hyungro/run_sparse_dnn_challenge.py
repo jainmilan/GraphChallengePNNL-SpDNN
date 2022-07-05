@@ -2,6 +2,7 @@ from read_triples import read_input, read_weight
 from inference import inferenceReLUvec
 from cupyx.scipy import sparse
 import cupy as cp
+import numpy as np
 import time
 
 base_path = '/qfs/projects/pacer/graphchallenge2022/'
@@ -10,14 +11,14 @@ inputFile = './MNIST/sparse-images-'
 categoryFile = './DNN/neuron'
 layerFile = './DNN/neuron'
 
-Nneuron = [1024 * 1] # [1024, 4096, 16384, 65536]
+Nneuron = [1024 * 64] # [1024, 4096, 16384, 65536]
 SAVECAT = 0
 READTSV = 1
 READMAT = 0
 
 maxLayers = [120 * 1] # * [ 1, 4, 16]
 
-neuralNetBias = [-0.3, -0.35, -0.4, -0.45]
+neuralNetBias = [ -0.45 ] # [0.3, -0.35, -0.4, -0.45]
 
 for i in range(len(Nneuron)):
     if READTSV:

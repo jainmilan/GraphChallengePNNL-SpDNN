@@ -16,7 +16,7 @@ def read_input(fname):
     elif ijv.shape[0] == 98858913:
         neuron = 16384
     elif ijv.shape[0] == 392191985:
-        neuron = 65535
+        neuron = 65536
 
     data = cp.array(ijv[2].values)
     row = cp.array(ijv[0].values)
