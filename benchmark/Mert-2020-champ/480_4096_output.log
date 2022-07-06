@@ -1,0 +1,19 @@
+
+NUMBER OF PROCESS: 1
+NUMBER OF THREADS: 16
+
+DATASET: /lus/grand/projects/GRACE/spdnn/dataset
+NUMBER OF NEURONS: 4096
+NUMBER OF LAYERS: 480
+BATCH SIZE: 60000
+INPUT NZ: 25019051
+BIAS: -0.350000
+
+PARTITIONING
+proc 0 batch: 60000/60000 extbatch 60000
+
+READING WEIGHTS
+weights: 62914560 (0.377487 GB)
+500,54
+/lus/grand/projects/GRACE/spdnn/dataset/neuron4096.bin
+open /lus/grand/projects/GRACE/spdnn/dataset/neuron4096.binfailed to open /lus/grand/projects/GRACE/spdnn/dataset/neuron4096.bin
