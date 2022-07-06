@@ -5,19 +5,20 @@ import cupy as cp
 import time
 
 base_path = '/qfs/projects/pacer/graphchallenge2022/'
+base_path = '/lus/grand/projects/GRACE/spdnn/'
 
 inputFile = './MNIST/sparse-images-'
 categoryFile = './DNN/neuron'
 layerFile = './DNN/neuron'
 
-Nneuron = [1024 * 1] # [1024, 4096, 16384, 65536]
+Nneuron = [65536] # [1024, 4096, 16384, 65536]
 SAVECAT = 0
 READTSV = 1
 READMAT = 0
 
-maxLayers = [120 * 1] # * [ 1, 4, 16]
+maxLayers = [120]
 
-neuralNetBias = [-0.3, -0.35, -0.4, -0.45]
+neuralNetBias = [-0.45] #[-0.3, -0.35, -0.4, -0.45]
 
 for i in range(len(Nneuron)):
     if READTSV:
@@ -55,7 +56,7 @@ for i in range(len(Nneuron)):
     challengeRunTime = time.time() - tic
 
     challengeRunRate = NfeatureVectors * DNNedges / challengeRunTime
-    print(f"Run time (sec): {challengeRunTime}, run rate (edges/sec): {challengeRunRate}")
+    print(f"Run time (sec): {challengeRunTime}, run rate (edges/sec): {challengeRunRate}", flush=True)
 
     # Compute categories from scores
     scores_sum = scores.sum(axis=0)
