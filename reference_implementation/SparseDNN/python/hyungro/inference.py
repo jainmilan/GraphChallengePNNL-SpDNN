@@ -13,7 +13,7 @@ def inferenceReLUvec(W, bias, Y0):
         # % Propagate through layer.
         # % Note: using graph convention of A(i,j) means connection from i *to* j,
         # % that requires *left* multiplication feature *row* vectors.
-        Y = cp.cusparse.spmm(W[i], Y)#, transa=False, transb=False)
+        Y = cp.cusparse.spmm(W[i], Y)
         b = bias[i]
 
         # Apply bias to non-zero entries.
