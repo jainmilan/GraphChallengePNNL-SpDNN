@@ -1,0 +1,77 @@
+
+NUMBER OF PROCESS: 1
+NUMBER OF THREADS: 16
+
+DATASET: /lus/grand/projects/GRACE/spdnn/dataset
+NUMBER OF NEURONS: 16384
+NUMBER OF LAYERS: 120
+BATCH SIZE: 60000
+INPUT NZ: 98858913
+BIAS: -0.400000
+
+PARTITIONING
+proc 0 batch: 60000/60000 extbatch 60000
+
+READING WEIGHTS
+weights: 62914560 (0.377487 GB)
+500,55
+/lus/grand/projects/GRACE/spdnn/dataset/neuron16384.bin
+open /lus/grand/projects/GRACE/spdnn/dataset/neuron16384.binREADING INPUT
+about to memcpy 3750 MB
+done memcpy
+features: 1966080000 (7.864320 GB)
+extbatch=60000, neuron=16384
+myid 0 mydevice 0
+
+Device Count: 8
+Device 0 name: NVIDIA A100-SXM4-80GB
+Computational Capabilities: 8, 0
+Maximum global memory size: 85198045184
+Maximum constant memory size: 65536
+Maximum shared memory size per block: 49152
+Maximum block dimensions: 1024x1024x64
+Maximum grid dimensions: 2147483647x65535x65535
+Maximum threads per block: 1024
+Warp size: 32
+
+MINIBATCH SIZE: 12
+BLOCK SIZE: 256
+WARP SIZE: 32
+NUM BLOCKS: 64
+NUMWARPS: 8
+BUFFER SIZE: 6144 (24.000000 KB) PER FEATURE: 512 (2.000000 KB)
+
+total buffers: 82944 (10.800000 per block)
+total map: 40882176 (5323.200195 per block)
+total warpnz: 4182400 (50.424381 per buffer)
+iefficiency: 2.127279
+
+OUT OF CORE IS ENABLED
+OVERLAPPING IS ENABLED
+
+mapsizemax: 524288 (1.048576 KB)
+weightsizemax: 1412096 (8.472576 KB)
+cudaMalloc 3750 MB
+cudaMalloc 3750 MB
+
+GPU 0: OTHERS: 0.000480 DISPLS: 0.003018 MAPS: 0.002097 WEIGHTS: 0.016945 FEATURES: 7.864320 TOTAL: 7.886380 GB
+MAX GPU MEM: 7.886380 GB
+
+START INFERENCE
+END INFERENCE
+
+CHECK CATEGORIES
+proc 0 categories: 1918
+all categories: 1918
+CHALLENGE PASSED!
+
+      I/O TIME: 4.670918 s
+INFERENCE TIME: 0.411958 s
+INFERENCE THRP: 9.163254e+12 EDGES/s (18.326509 TFLOPS)
+--------------------------------------
+KERNEL TIME: 4.073953e-01 s
+  COPY TIME: 0.000000e+00 s
+ OTHER TIME: 4.562418e-03 s
+ TOTAL TIME: 4.119577e-01 s
+
+EXECUTION TIME: 8.115765

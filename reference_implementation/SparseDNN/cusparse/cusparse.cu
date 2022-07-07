@@ -185,12 +185,12 @@ double kernel_spmm(int l) {
 
 int main(int argc, char* argv[]) {
 
-    dataset = "/qfs/projects/pacer/leeh736/dataset"; 
+    dataset = "/lus/grand/projects/GRACE/spdnn/dataset";///qfs/projects/pacer/leeh736/dataset"; 
     char *chartemp;
-    neuron = 16384;
+    neuron = 65536;
     layer = 1920;
     batch = 60000;
-    input = 98858913; // 392191985; // 98858913; // 25019051; //6374505;
+    input = 392191985; // 392191985; // 98858913; // 25019051; //6374505;
     bias = 0;
     
     mybatch = batch;
@@ -227,7 +227,7 @@ int main(int argc, char* argv[]) {
         fflush(stdout);
         auto t = kernel_spmm(i);
         spmm_times += double(t);
-        printf(":(%lf)", t);
+        printf(":(%lf)\n", t);
         fflush(stdout);
     }
     clock_t end_start = clock();
