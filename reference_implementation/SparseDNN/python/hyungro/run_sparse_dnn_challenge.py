@@ -11,7 +11,7 @@ inputFile = './MNIST/sparse-images-'
 categoryFile = './DNN/neuron'
 layerFile = './DNN/neuron'
 
-Nneuron = [1024 * 64] # [1024, 4096, 16384, 65536]
+Nneuron = [1024 * 1] # [1024, 4096, 16384, 65536]
 SAVECAT = 0
 READTSV = 1
 READMAT = 0
@@ -36,7 +36,7 @@ for i in range(len(Nneuron)):
 
         DNNedges = 0
         layers = [] 
-        bias = []
+        #bias = []
         tic = time.time()
         for k in range(maxLayers[j]):
             if READTSV:
@@ -44,7 +44,7 @@ for i in range(len(Nneuron)):
             if READMAT:
                 pass
             DNNedges += layers[k].nnz
-            bias.append(cp.multiply(cp.ones((Nneuron[i], 1)), neuralNetBias[i]))
+            #bias.append(cp.multiply(cp.ones((Nneuron[i], 1)), neuralNetBias[i]))
     readLayerTime = time.time() - tic
     readLayerRate = DNNedges / readLayerTime
 
@@ -52,7 +52,7 @@ for i in range(len(Nneuron)):
     print(f"Read time (sec): {readLayerTime}, read rate (edges/sec): {readLayerRate}")
 
     tic = time.time()
-    scores = inferenceReLUvec(layers, bias, featureVectors)
+    scores = inferenceReLUvec(layers, featureVectors)
     challengeRunTime = time.time() - tic
 
     challengeRunRate = NfeatureVectors * DNNedges / challengeRunTime
