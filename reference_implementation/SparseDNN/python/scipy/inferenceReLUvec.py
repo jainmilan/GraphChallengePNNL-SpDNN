@@ -1,5 +1,6 @@
 import numpy as np
-
+import sys
+    
 def inferenceReLUvec(W, bias, Y0):
     # Performs ReLU inference  using input feature vector(s) Y0,
     # DNN weights W, and constant bias.
@@ -10,7 +11,6 @@ def inferenceReLUvec(W, bias, Y0):
 
     # loop through each weight layer W[i]
     # print(W)
-    import sys
     for i in range(len(W)):
         
         # % Propagate through layer.
