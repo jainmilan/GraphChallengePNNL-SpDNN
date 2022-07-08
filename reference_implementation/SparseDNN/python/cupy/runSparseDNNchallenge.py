@@ -50,15 +50,11 @@ neuralNetBias=[neuralNetBias_val]
 for i in range (len(Nneuron)):
     # Load sparse MNIST data.
     if READTSV:
-        # filename = inputFile + str(Nneuron[i]) + '.tsv'
         filename = f"{inputFile}{Nneuron[i]}.tsv"
         print("[INFO] Reading file: %s" %(filename))
         featureVectors = readTriples(filename, n_features=Nneuron[i])
     
     if READMAT:
-        # filename = 'data/MNIST/sparse-images-' + str(Nneuron(i)) + '.mat'
-        # scipy.io.loadmat(filename, 'z')
-        # featureVectors = z
         pass
 
     NfeatureVectors = featureVectors.shape[0]
@@ -68,7 +64,6 @@ for i in range (len(Nneuron)):
         # Read in true categories.
         if not SAVECAT:
             filename = f"{categoryFile}{Nneuron[i]}-l{maxLayers[j]}-categories.tsv"
-            # print(filename)
             trueCategories = cp.genfromtxt(filename)
             # FIXING THE INDEXING: True Categories are +1
             trueCategories = trueCategories - 1
@@ -80,15 +75,10 @@ for i in range (len(Nneuron)):
         for k in range(maxLayers[j]):
             if READTSV:
                 filename = f"{layerFile}{Nneuron[i]}/n{Nneuron[i]}-l{k+1}.tsv"
-                # print(filename)
                 layers.append(readTriples(filename, n_features=Nneuron[i]));
             if READMAT:
-                # load([layerFile num2str(Nneuron[i]) '/n' num2str(Nneuron(i)) '-l' num2str(k) '.mat'],'layersScaledj');
-                # layers{k} = layersScaledj;
                 pass
             DNNedges = DNNedges + layers[k].count_nonzero();
-            # b_data = csr_matrix((NfeatureVectors, Nneuron[i]))
-            # bias.append(csr_matrix(cp.ones((1, Nneuron[i]))) * neuralNetBias[i])
             bias = neuralNetBias[i]
         
         readLayerTime = time.perf_counter() - tic
@@ -100,7 +90,6 @@ for i in range (len(Nneuron)):
         # Perform and time challenge
         tic = time.perf_counter();
         scores = inferenceReLUvec(layers, bias, featureVectors);  
-        # scores = featureVectors
         challengeRunTime = time.perf_counter() - tic;
 
         challengeRunRate = NfeatureVectors * DNNedges / challengeRunTime;
@@ -112,7 +101,6 @@ for i in range (len(Nneuron)):
         val = scores_sum
         
         if SAVECAT:
-        #   StrFileWrite(sprintf('%d\n',categories),[categoryFile num2str(Nneuron(i)) '-l' num2str(maxLayers(j)) '-categories.tsv']);
             pass
         else:
             tc_sparse = csr_matrix((cp.ones_like(trueCategories), (trueCategories, cp.zeros_like(trueCategories))), shape=(NfeatureVectors, 1), dtype='float32')
