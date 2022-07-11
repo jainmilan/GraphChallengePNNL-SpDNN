@@ -240,7 +240,7 @@ void parseCommandLine(int argc, char** const argv)
   int ret;
   optind = 1;
 
-  while ((ret = getopt(argc, argv, "f:l:b:i:n:a:")) != -1) {
+  while ((ret = getopt(argc, argv, "f:l:b:i:n:a:h")) != -1) {
     switch (ret) {
       case 'f':
         inputFileName.assign(optarg);
@@ -260,6 +260,9 @@ void parseCommandLine(int argc, char** const argv)
       case 'b':
         bias = atoi(optarg);
         break;
+      case 'h':
+        std::cout << "./inference -f <file-path> -i <input> -a <#batches> -n <#neurons> -l <#layers> -b <bias>" << std::endl;
+        break;  
      default:
         assert(0 && "Should not reach here!!");
         break;
