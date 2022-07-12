@@ -100,13 +100,13 @@ double kernel_spmm(INDPREC l) {
 #else
 #pragma omp target teams distribute parallel for simd
 #endif
-   for(INDPREC i = 0; i < mybatch; ++i) {
+   for(INDPREC i = 0; i < mybatch; i++) {
         active[i] = 0;
 #if defined(USE_OMP_HOST)
 #pragma omp simd 
 #else
 #endif
-       for(INDPREC j = 0; j < neuron; ++j) {
+       for(INDPREC j = 0; j < neuron; j++) {
             if(nextfeat[i * neuron + j] =  ReLU(nextfeat[i * neuron + j] + bias))
                 active[i] += 1;
         }
@@ -119,11 +119,11 @@ double kernel_spmm(INDPREC l) {
 
     INDPREC feature = 0, fet = 0;
 #pragma omp parallel for default(shared) schedule(static)
-    for(INDPREC i = 0; i < mybatch; ++i) {
+    for(INDPREC i = 0; i < mybatch; i++) {
         if(active[i]) {
 #pragma omp atomic read
             fet = feature;
-            for(INDPREC j = 0; j < neuron; ++j) {
+            for(INDPREC j = 0; j < neuron; j++) {
                 nextfeat[fet * neuron + j] = nextfeat[i * neuron + j];
             }
 #pragma omp atomic update
