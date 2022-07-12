@@ -1,4 +1,5 @@
 import cupy as cp
+from cupyx.scipy import sparse
 
 # @profile
 def inferenceReLUvec(W, bias, Y0):
@@ -16,16 +17,13 @@ def inferenceReLUvec(W, bias, Y0):
         # % Propagate through layer.
         # % Note: using graph convention of A(i,j) means connection from i *to* j,
         # % that requires *left* multiplication feature *row* vectors.
-        # print(Y)
-        # print(W[i])
-        print(Y.size)
-        print(Y.count_nonzero(), W[i].count_nonzero())
-        Y = Y @ W[i]
-
+        Y = cp.cusparse.spmm(a=Y, b=W[i])
+        
         # Apply bias to non-zero entries.
-        Y.data = cp.where(Y.data < -bias,  0, cp.where(Y.data > YMAX - bias, YMAX, Y.data + bias))
+        Y = cp.where(Y <- bias,  0, cp.where(Y > YMAX - bias, YMAX, Y + bias))
+        rows, cols = cp.nonzero(Y)
         
         # eliminate zero entries
-        Y.eliminate_zeros()
-
+        Y = sparse.csr_matrix((Y[rows, cols], (rows, cols)), shape=(60000, 1024))
+        
     return Y

@@ -16,6 +16,7 @@ echo "Number of CPUs: ${3}"
 echo "Version: ${4}"
 echo "Neurons: ${5}"
 echo "Number of Layers: ${6}"
+echo "Profiling: ${7}"
 
 module load cuda/11.4
 ulimit -u 16000
@@ -30,5 +31,10 @@ python --version
 # echo ${PWD}/SparseDNN/python/scipy/inferenceReLUvec.py
 # python -u ${PWD}/SparseDNN/python/${4}/runSparseDNNchallenge.py --neurons ${5}
 
-nsys profile --kill=none -t cuda,osrt,cudnn,cublas -o ../../../logs/GraphChallenge/nsys/qdrep_report_p${1}_ng${2}_nc${3}_vng${4}_n${5}_nl${6} -w true --force-overwrite=true python -u ${PWD}/SparseDNN/python/${4}/runSparseDNNchallenge.py --neurons ${5} --num_layers ${6}
+if [ ${7} == 1 ]; then
+    nsys profile --kill=none -t cuda,osrt,cudnn,cublas -o ../../../logs/GraphChallenge/nsys/qdrep_report_p${1}_ng${2}_nc${3}_vng${4}_n${5}_nl${6} -w true --force-overwrite=true python -u ${PWD}/SparseDNN/python/${4}/runSparseDNNchallenge.py --neurons ${5} --num_layers ${6}
+elif [ ${7} == 0 ]; then
+    python -u ${PWD}/SparseDNN/python/${4}/runSparseDNNchallenge.py --neurons ${5} --num_layers ${6}
+fi
+# 
 
