@@ -2,6 +2,8 @@
 #include <iostream>
 #include <omp.h>
 #include <vector>
+#include <string>
+#include <fstream>
 #include "vars.h"
 
 
@@ -66,9 +68,9 @@ double kernel_spmm(int l) {
 
    double t0 = omp_get_wtime();
 #pragma omp target teams distribute parallel for \
-  collapse(2) 
+   collapse(2)
     for (int i = 0; i < neuron; i++) {
-      for (int j = 0; j < neuron; j++) {
+      for (int j = 0; j < mybatch; j++) {
         float result = 0;
         for (int p = csrdispl[l][i]; p < csrdispl[l][i+1]; p++) {
           const int k = csrindex[l][p];
@@ -112,6 +114,19 @@ double kernel_spmm(int l) {
 }
 
 int main(int argc, char* argv[]) {
+    parseCommandLine(argc, argv);
+    if (inputFileName.empty() || !neuron)
+    {
+      std::cout << "Input arguments missing...exiting!!!" << std::endl;
+      return 0;
+    }
+
+    std::ifstream f(inputFileName.c_str());
+    if (!f.good())
+    {
+      std::cout << "File path not found...exiting!!!" << std::endl;
+      return 0;
+    }
     dataset = (char*)inputFileName.c_str();
     /*
     dataset = "/lus/grand/projects/GRACE/spdnn/dataset";///qfs/projects/pacer/leeh736/dataset"; 
@@ -165,7 +180,6 @@ int main(int argc, char* argv[]) {
     printf("Inference time : %lfs, %lfs, %f TTEPS\n", gemm_time, all_time, long((long)batch * (long)neuron * 32 * layer) / gemm_time / 1e12);
 	return 0;
 }
-
 
 void readweights(){
     totnz = 0;
