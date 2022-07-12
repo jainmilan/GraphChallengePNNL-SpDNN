@@ -85,7 +85,7 @@ double kernel_spmm(INDPREC l) {
 #endif
     for (INDPREC i = 0; i < neuron; i++) {
       for (INDPREC j = 0; j < mybatch; j++) {
-        float result = 0;
+        VALPREC result = 0;
         for (INDPREC p = csrdispl[l][i]; p < csrdispl[l][i+1]; p++) {
           const INDPREC k = csrindex[l][p];
           result += csrvalue[l][p] * currfeat[k*neuron + j];
