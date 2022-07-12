@@ -8,17 +8,17 @@
 
 
 static char *dataset;
-static int neuron;
-static int layer;
-static int batch;
-static int input;
-static float bias;
+static INDPREC neuron;
+static INDPREC layer;
+static INDPREC batch;
+static INDPREC input;
+static VALPREC bias;
 static std::string inputFileName;
 
 int blocksize;
 
 long totnz;
-int **csrdispl;   
+INDPREC **csrdispl;   
 INDPREC **csrindex;
 VALPREC **csrvalue;
 
@@ -34,19 +34,22 @@ double timebalance = 0.0;
 double timekernel = 0.0;
 double timecopy = 0.0;
 
-int *numbatch;
-int *batchdispl;
-int mybatch;
+INDPREC *numbatch;
+INDPREC *batchdispl;
+INDPREC mybatch;
 
-float ReLU(float x){
+FEATPREC ReLU(FEATPREC x){
     return x<0.0?0.0:x>32.0?32.0:x;
  };
 
 void setup_gpu() {
-    for(int l = 0; l < layer; l++){
+    for(INDPREC l = 0; l < layer; l++){
+#if defined(USE_OMP_HOST)
+#else
 #pragma omp target enter data map(alloc:csrdispl[l][0:neuron+1])
 #pragma omp target enter data map(alloc:csrindex[l][0:csrdispl[l][neuron]])
 #pragma omp target enter data map(alloc:csrvalue[l][0:csrdispl[l][neuron]])
+#endif
     }
 #pragma omp target enter data map(alloc:currfeat[0:mybatch*neuron])
 #pragma omp target enter data map(alloc:nextfeat[0:mybatch*neuron])
@@ -54,26 +57,37 @@ void setup_gpu() {
 }
 
 void final_gpu() {
-    for(int l = 0; l < layer; l++){
+    for(INDPREC l = 0; l < layer; l++){
+#if defined(USE_OMP_HOST)
+#else
 #pragma omp target exit data map(delete:csrdispl[l][0:neuron+1])
 #pragma omp target exit data map(delete:csrindex[l][0:csrdispl[l][neuron]])
 #pragma omp target exit data map(delete:csrvalue[l][0:csrdispl[l][neuron]])
+#endif
     }
+#if defined(USE_OMP_HOST)
+#else
 #pragma omp target exit data map(delete:currfeat[0:mybatch*neuron])
 #pragma omp target exit data map(delete:nextfeat[0:mybatch*neuron])
 #pragma omp target exit data map(delete:active[0:mybatch])
+#endif
 }
 
-double kernel_spmm(int l) {
+double kernel_spmm(INDPREC l) {
 
    double t0 = omp_get_wtime();
+#if defined(USE_OMP_HOST)
+#pragma omp parallel for default(shared) \
+   collapse(2)
+#else
 #pragma omp target teams distribute parallel for \
    collapse(2)
-    for (int i = 0; i < neuron; i++) {
-      for (int j = 0; j < mybatch; j++) {
+#endif
+    for (INDPREC i = 0; i < neuron; i++) {
+      for (INDPREC j = 0; j < mybatch; j++) {
         float result = 0;
-        for (int p = csrdispl[l][i]; p < csrdispl[l][i+1]; p++) {
-          const int k = csrindex[l][p];
+        for (INDPREC p = csrdispl[l][i]; p < csrdispl[l][i+1]; p++) {
+          const INDPREC k = csrindex[l][p];
           result += csrvalue[l][p] * currfeat[k*neuron + j];
         }
         nextfeat[i*neuron+j] = result;
@@ -81,24 +95,35 @@ double kernel_spmm(int l) {
     }
    double t1 = omp_get_wtime();
                                         
-#pragma omp target teams distribute parallel for 
-   for(int i = 0; i < mybatch; ++i) {
+#if defined(USE_OMP_HOST)
+#pragma omp parallel for default(shared)
+#else
+#pragma omp target teams distribute parallel for simd
+#endif
+   for(INDPREC i = 0; i < mybatch; ++i) {
         active[i] = 0;
-       for(int j = 0; j < neuron; ++j) {
+#if defined(USE_OMP_HOST)
+#pragma omp simd 
+#else
+#endif
+       for(INDPREC j = 0; j < neuron; ++j) {
             if(nextfeat[i * neuron + j] =  ReLU(nextfeat[i * neuron + j] + bias))
                 active[i] += 1;
         }
     }
 
+#if defined(USE_OMP_HOST)
+#else
 #pragma omp target update from(currfeat[0:mybatch*neuron], nextfeat[0:mybatch*neuron], active[0:mybatch])
-    
-    int feature = 0, fet = 0;
+#endif
+
+    INDPREC feature = 0, fet = 0;
 #pragma omp parallel for default(shared) schedule(static)
-    for(int i = 0; i < mybatch; ++i) {
+    for(INDPREC i = 0; i < mybatch; ++i) {
         if(active[i]) {
 #pragma omp atomic read
             fet = feature;
-            for(int j = 0; j < neuron; ++j) {
+            for(INDPREC j = 0; j < neuron; ++j) {
                 nextfeat[fet * neuron + j] = nextfeat[i * neuron + j];
             }
 #pragma omp atomic update
@@ -139,7 +164,7 @@ int main(int argc, char* argv[]) {
     */
     mybatch = batch;
   
-    csrdispl = new int*[layer];
+    csrdispl = new INDPREC*[layer];
     csrindex = new INDPREC*[layer];
     csrvalue = new VALPREC*[layer];
     currfeat = new FEATPREC[neuron*(long)mybatch];
@@ -183,13 +208,13 @@ int main(int argc, char* argv[]) {
 
 void readweights(){
     totnz = 0;
-    for(int l = 0; l < layer; l++){
-        int rownz[neuron];
-        for(int n = 0; n < neuron; n++)
+    for(INDPREC l = 0; l < layer; l++){
+        INDPREC rownz[neuron];
+        for(INDPREC n = 0; n < neuron; n++)
             rownz[n] = 32;
-        csrdispl[l] = new int[neuron+1];
+        csrdispl[l] = new INDPREC[neuron+1];
         csrdispl[l][0] = 0;
-        for(int n = 1; n < neuron+1; n++)
+        for(INDPREC n = 1; n < neuron+1; n++)
             csrdispl[l][n] = csrdispl[l][n-1]+rownz[n-1];
         totnz += csrdispl[l][neuron];
         csrindex[l] = new INDPREC[csrdispl[l][neuron]];
@@ -202,17 +227,17 @@ void readweights(){
     sprintf(filename,"%s/neuron%d.bin",dataset,neuron);
     printf("open filename = %s\n", filename);
     FILE *weightf = fopen(filename,"rb");
-    for(int l = 0; l < layer; l++){
-        int *row = new int[csrdispl[l][neuron]];
-        int *col = new int[csrdispl[l][neuron]];
-        float *val = new float[csrdispl[l][neuron]];
-        fread(row, sizeof(int), csrdispl[l][neuron], weightf);
-        fread(col, sizeof(int), csrdispl[l][neuron], weightf);
-        fread(val, sizeof(int), csrdispl[l][neuron],weightf);
-        int rownz[neuron];
-        for(int n = 0; n < neuron; n++)
+    for(INDPREC l = 0; l < layer; l++){
+        INDPREC *row = new INDPREC[csrdispl[l][neuron]];
+        INDPREC *col = new INDPREC[csrdispl[l][neuron]];
+        VALPREC *val = new VALPREC[csrdispl[l][neuron]];
+        fread(row, sizeof(INDPREC), csrdispl[l][neuron], weightf);
+        fread(col, sizeof(INDPREC), csrdispl[l][neuron], weightf);
+        fread(val, sizeof(VALPREC), csrdispl[l][neuron],weightf);
+        INDPREC rownz[neuron];
+        for(INDPREC n = 0; n < neuron; n++)
             rownz[n] = 0;
-        for(int n = 0; n < csrdispl[l][neuron]; n++){
+        for(INDPREC n = 0; n < csrdispl[l][neuron]; n++){
             csrindex[l][csrdispl[l][row[n]-1]+rownz[row[n]-1]] = col[n]-1;
             csrvalue[l][csrdispl[l][row[n]-1]+rownz[row[n]-1]] = val[n];
             rownz[row[n]-1]++;
@@ -230,12 +255,12 @@ void readinput(){
     printf("features: %ld (%f GB)\n",neuron*(long)batch*2,neuron*(long)batch*2*sizeof(FEATPREC)/1.0e9);
     sprintf(filename, "%s/sparse-images-%d.bin", dataset, neuron);
     FILE *inputf = fopen(filename,"rb");
-    int *row = new int[input];
-    int *col = new int[input];
-    float *val = new float[input];
-    fread(row,sizeof(int),input,inputf);
-    fread(col,sizeof(int),input,inputf);
-    fread(val,sizeof(float),input,inputf);
+    INDPREC *row = new INDPREC[input];
+    INDPREC *col = new INDPREC[input];
+    VALPREC *val = new VALPREC[input];
+    fread(row,sizeof(INDPREC),input,inputf);
+    fread(col,sizeof(INDPREC),input,inputf);
+    fread(val,sizeof(VALPREC),input,inputf);
     for(long n = 0; n < neuron * (long)batch; n++)
         currfeat[n] = 0.0;
     for(int n = 0; n < input; n++) {

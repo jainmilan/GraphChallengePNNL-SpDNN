@@ -1,7 +1,13 @@
 # ----- Make Macros -----
 
+ENABLE_GPU=0
+ifeq ($(ENABLE_GPU),1)
 CXX = nvc++ 
-CXXFLAGS = -std=c++11 -mp=gpu -Minfo=mp
+CXXFLAGS = -std=c++11 -DINDPREC=int -DVALPREC=float -DFEATPREC=float -mp=gpu -Minfo=mp
+else
+CXX = g++ 
+CXXFLAGS = -std=c++11 -DUSE_OMP_HOST -DINDPREC=int -DVALPREC=float -DFEATPREC=float -fopenmp
+endif
 OPTFLAGS = -O3
 
 TARGETS = inference
