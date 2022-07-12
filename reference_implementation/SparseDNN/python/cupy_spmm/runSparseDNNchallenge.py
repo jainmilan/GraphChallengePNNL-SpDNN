@@ -85,11 +85,12 @@ for i in range (len(Nneuron)):
                 layers.append(readTriples(
                     filename, 
                     n_rows=Nneuron[i],
-                    n_features=Nneuron[i]
+                    n_features=Nneuron[i],
+                    make_it_dense=True
                 ));
             if READMAT:
                 pass
-            DNNedges = DNNedges + layers[k].count_nonzero();
+            DNNedges = DNNedges + cp.count_nonzero(layers[k]);
             bias = neuralNetBias[i]
         
         readLayerTime = time.perf_counter() - tic
