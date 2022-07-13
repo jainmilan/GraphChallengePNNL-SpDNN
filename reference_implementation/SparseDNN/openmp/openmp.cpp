@@ -14,6 +14,7 @@ static INDPREC batch;
 static INDPREC input;
 static VALPREC bias;
 static std::string inputFileName;
+static std::string outFilePath;
 
 int blocksize;
 
@@ -36,7 +37,6 @@ double timecopy = 0.0;
 
 INDPREC *numbatch;
 INDPREC *batchdispl;
-INDPREC mybatch;
 
 FEATPREC ReLU(FEATPREC x){
     return x<0.0?0.0:x>32.0?32.0:x;
@@ -53,9 +53,9 @@ void setup_gpu() {
     }
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target enter data map(alloc:currfeat[0:mybatch*neuron])
-#pragma omp target enter data map(alloc:nextfeat[0:mybatch*neuron])
-#pragma omp target enter data map(alloc:active[0:mybatch])
+#pragma omp target enter data map(alloc:currfeat[0:batch*neuron])
+#pragma omp target enter data map(alloc:nextfeat[0:batch*neuron])
+#pragma omp target enter data map(alloc:active[0:batch])
 #endif
 }
 
@@ -70,9 +70,9 @@ void final_gpu() {
     }
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target exit data map(delete:currfeat[0:mybatch*neuron])
-#pragma omp target exit data map(delete:nextfeat[0:mybatch*neuron])
-#pragma omp target exit data map(delete:active[0:mybatch])
+#pragma omp target exit data map(delete:currfeat[0:batch*neuron])
+#pragma omp target exit data map(delete:nextfeat[0:batch*neuron])
+#pragma omp target exit data map(delete:active[0:batch])
 #endif
 }
 
@@ -87,7 +87,7 @@ double kernel_spmm(INDPREC l) {
    collapse(2)
 #endif
     for (INDPREC i = 0; i < neuron; i++) {
-      for (INDPREC j = 0; j < mybatch; j++) {
+      for (INDPREC j = 0; j < batch; j++) {
         VALPREC result = 0;
         for (INDPREC p = csrdispl[l][i]; p < csrdispl[l][i+1]; p++) {
           const INDPREC k = csrindex[l][p];
@@ -103,7 +103,7 @@ double kernel_spmm(INDPREC l) {
 #else
 #pragma omp target teams distribute parallel for simd
 #endif
-   for(INDPREC i = 0; i < mybatch; i++) {
+   for(INDPREC i = 0; i < batch; i++) {
         active[i] = 0;
 #if defined(USE_OMP_HOST)
 #pragma omp simd 
@@ -117,12 +117,12 @@ double kernel_spmm(INDPREC l) {
 
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target update from(currfeat[0:mybatch*neuron], nextfeat[0:mybatch*neuron], active[0:mybatch])
+#pragma omp target update from(currfeat[0:batch*neuron], nextfeat[0:batch*neuron], active[0:batch])
 #endif
 
     INDPREC feature = 0, fet = 0;
 #pragma omp parallel for default(shared) schedule(static)
-    for(INDPREC i = 0; i < mybatch; i++) {
+    for(INDPREC i = 0; i < batch; i++) {
         if(active[i]) {
 #pragma omp atomic read
             fet = feature;
@@ -134,7 +134,7 @@ double kernel_spmm(INDPREC l) {
         }
     }
 
-    mybatch = feature;
+    batch = feature;
     FEATPREC *tempfeat = currfeat;
     currfeat = nextfeat;
     nextfeat = tempfeat;
@@ -152,9 +152,20 @@ int main(int argc, char* argv[]) {
     std::ifstream f(inputFileName.c_str());
     if (!f.good())
     {
-      std::cout << "File path not found...exiting!!!" << std::endl;
+      std::cout << "Input file path not found...exiting!!!" << std::endl;
       return 0;
     }
+
+    if (!outFilePath.empty())
+    {
+      std::ifstream f(outFilePath.c_str());
+      if (!f.good())
+      {
+        std::cout << "Output file path not found...exiting!!!" << std::endl;
+        return 0;
+      }
+    }
+
     dataset = (char*)inputFileName.c_str();
     /*
     dataset = "/lus/grand/projects/GRACE/spdnn/dataset";///qfs/projects/pacer/leeh736/dataset"; 
@@ -165,15 +176,13 @@ int main(int argc, char* argv[]) {
     input = 392191985; // 392191985; // 98858913; // 25019051; //6374505;
     bias = 0;
     */
-    mybatch = batch;
-  
     csrdispl = new INDPREC*[layer];
     csrindex = new INDPREC*[layer];
     csrvalue = new VALPREC*[layer];
-    currfeat = new FEATPREC[neuron*(long)mybatch];
-    nextfeat = new FEATPREC[neuron*(long)mybatch];
+    currfeat = new FEATPREC[neuron*(long)batch];
+    nextfeat = new FEATPREC[neuron*(long)batch];
   
-    active = new int [mybatch];
+    active = new int [batch];
     
     
     printf("%d neurons, %d layers", neuron, layer) ;
@@ -183,7 +192,7 @@ int main(int argc, char* argv[]) {
     printf("READING INPUT\n");
     readinput();
 
-    for(int k = 0; k < mybatch; k++){
+    for(int k = 0; k < batch; k++){
       active[k] = neuron;
     }
     
@@ -206,7 +215,29 @@ int main(int argc, char* argv[]) {
     auto all_time = double(end_start - total_start)  / CLOCKS_PER_SEC;
     final_gpu(); 
     printf("Inference time : %lfs, %lfs, %f TTEPS\n", gemm_time, all_time, long((long)batch * (long)neuron * 32 * layer) / gemm_time / 1e12);
-	return 0;
+	 
+    FEATPREC *sumfeat = new FEATPREC[batch];
+    std::fill(sumfeat, sumfeat + batch, 0.0);
+    for(INDPREC i = 0; i < batch; i++) {
+      for(INDPREC j = 0; j < neuron; j++) {
+        sumfeat[i] += nextfeat[i * neuron + j];
+      }
+    }
+    
+    std::string slayer = std::to_string(layer);
+    std::string sneuron = std::to_string(neuron);
+    std::string outfilename = outFilePath + "/" + slayer + sneuron + "-results.txt";
+    
+    std::cout << "Storing output results in: " << outfilename << std::endl;
+    std::ofstream ofile(outfilename);
+    if (ofile.is_open())
+    {
+      for (INDPREC i = 0; i < batch; i++)
+        ofile << sumfeat[i] << "\n";
+    }
+    ofile.close();
+
+    return 0;
 }
 
 void readweights(){
@@ -282,10 +313,13 @@ void parseCommandLine(int argc, char** const argv)
   int ret;
   optind = 1;
 
-  while ((ret = getopt(argc, argv, "f:l:b:i:n:a:h")) != -1) {
+  while ((ret = getopt(argc, argv, "f:o:l:b:i:n:a:h")) != -1) {
     switch (ret) {
       case 'f':
         inputFileName.assign(optarg);
+        break;
+      case 'o':
+        outFilePath.assign(optarg);
         break;
       case 'a':
         batch = atoi(optarg);
