@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <iostream>
-#include <omp.h>
 #include <vector>
 #include <string>
 #include <fstream>
+#include <omp.h>
 #include "vars.h"
 
 
@@ -88,9 +88,9 @@ double kernel_spmm(INDPREC l) {
         VALPREC result = 0;
         for (INDPREC p = csrdispl[l][i]; p < csrdispl[l][i+1]; p++) {
           const INDPREC k = csrindex[l][p];
-          result += csrvalue[l][p] * currfeat[k*neuron + j];
+          result += csrvalue[l][p] * currfeat[j*mybatch + k];
         }
-        nextfeat[i*neuron+j] = result;
+        nextfeat[j*mybatch + i] = result;
       }
     }
    double t1 = omp_get_wtime();
