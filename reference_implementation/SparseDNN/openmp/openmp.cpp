@@ -88,9 +88,9 @@ double kernel_spmm(INDPREC l) {
         VALPREC result = 0;
         for (INDPREC p = csrdispl[l][i]; p < csrdispl[l][i+1]; p++) {
           const INDPREC k = csrindex[l][p];
-          result += csrvalue[l][p] * currfeat[j*mybatch + k];
+          result += csrvalue[l][p] * currfeat[j*neuron + k];
         }
-        nextfeat[j*mybatch + i] = result;
+        nextfeat[j*neuron + i] = result;
       }
     }
    double t1 = omp_get_wtime();
