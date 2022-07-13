@@ -216,10 +216,10 @@ int main(int argc, char* argv[]) {
     final_gpu(); 
     printf("Inference time : %lfs, %lfs, %f TTEPS\n", gemm_time, all_time, long((long)batch * (long)neuron * 32 * layer) / gemm_time / 1e12);
 	 
-    FEATPREC *sumfeat = new FEATPREC[batch];
-    std::fill(sumfeat, sumfeat + batch, 0.0);
-    for(INDPREC i = 0; i < batch; i++) {
-      for(INDPREC j = 0; j < neuron; j++) {
+    FEATPREC *sumfeat = new FEATPREC[neuron];
+    std::fill(sumfeat, sumfeat + neuron, 0.0);
+    for(INDPREC i = 0; i < neuron; i++) {
+      for(INDPREC j = 0; j < batch; j++) {
         sumfeat[i] += nextfeat[i * neuron + j];
       }
     }
@@ -232,7 +232,7 @@ int main(int argc, char* argv[]) {
     std::ofstream ofile(outfilename);
     if (ofile.is_open())
     {
-      for (INDPREC i = 0; i < batch; i++)
+      for (INDPREC i = 0; i < neuron; i++)
         ofile << sumfeat[i] << "\n";
     }
     ofile.close();
