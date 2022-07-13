@@ -338,7 +338,7 @@ void parseCommandLine(int argc, char** const argv)
         input = atoi(optarg);
         break;
       case 'b':
-        bias = atoi(optarg);
+        bias = atof(optarg);
         break;
       case 'h':
         std::cout << "./inference -f <file-path> -i <input> -a <#batches> -n <#neurons> -l <#layers> -b <bias>" << std::endl;
