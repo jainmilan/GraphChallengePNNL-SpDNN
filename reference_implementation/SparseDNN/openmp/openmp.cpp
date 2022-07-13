@@ -216,23 +216,26 @@ int main(int argc, char* argv[]) {
     final_gpu(); 
     printf("Inference time : %lfs, %lfs, %f TTEPS\n", gemm_time, all_time, long((long)batch * (long)neuron * 32 * layer) / gemm_time / 1e12);
 	 
-    FEATPREC *sumfeat = new FEATPREC[neuron];
-    std::fill(sumfeat, sumfeat + neuron, 0.0);
-    for(INDPREC i = 0; i < neuron; i++) {
-      for(INDPREC j = 0; j < batch; j++) {
-        sumfeat[i] += nextfeat[i * neuron + j];
+    FEATPREC *sumfeat = new FEATPREC[batch];
+    std::fill(sumfeat, sumfeat + batch, 0.0);
+    for(INDPREC i = 0; i < batch; i++) {
+      FEATPREC tmp = 0.0;
+      for(INDPREC j = 0; j < neuron; j++) {
+        tmp += nextfeat[i * neuron + j];
       }
+      sumfeat[i] = tmp;
     }
-    
+
     std::string slayer = std::to_string(layer);
     std::string sneuron = std::to_string(neuron);
-    std::string outfilename = outFilePath + "/" + slayer + sneuron + "-results.txt";
+    std::string sbatch = std::to_string(batch);
+    std::string outfilename = outFilePath + "/" + slayer + "-" + sneuron + "-" + sbatch + "-results.txt";
     
     std::cout << "Storing output results in: " << outfilename << std::endl;
     std::ofstream ofile(outfilename);
     if (ofile.is_open())
     {
-      for (INDPREC i = 0; i < neuron; i++)
+      for (INDPREC i = 0; i < batch; i++)
         ofile << sumfeat[i] << "\n";
     }
     ofile.close();
