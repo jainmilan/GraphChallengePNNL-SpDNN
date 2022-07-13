@@ -51,9 +51,12 @@ void setup_gpu() {
 #pragma omp target enter data map(alloc:csrvalue[l][0:csrdispl[l][neuron]])
 #endif
     }
+#if defined(USE_OMP_HOST)
+#else
 #pragma omp target enter data map(alloc:currfeat[0:mybatch*neuron])
 #pragma omp target enter data map(alloc:nextfeat[0:mybatch*neuron])
 #pragma omp target enter data map(alloc:active[0:mybatch])
+#endif
 }
 
 void final_gpu() {
