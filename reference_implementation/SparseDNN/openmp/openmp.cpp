@@ -236,6 +236,7 @@ int main(int argc, char* argv[]) {
         ofile << sumfeat[i] << "\n";
     }
     ofile.close();
+    delete[] sumfeat;
 
     return 0;
 }
