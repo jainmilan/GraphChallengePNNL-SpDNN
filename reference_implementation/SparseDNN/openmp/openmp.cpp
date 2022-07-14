@@ -51,16 +51,16 @@ void setup_gpu() {
     for(INDPREC l = 0; l < layer; l++){
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target enter data map(alloc:csrdispl[l][0:neuron+1])
-#pragma omp target enter data map(alloc:csrindex[l][0:csrdispl[l][neuron]])
-#pragma omp target enter data map(alloc:csrvalue[l][0:csrdispl[l][neuron]])
+#pragma omp target enter data map(to:csrdispl[l][0:neuron+1])
+#pragma omp target enter data map(to:csrindex[l][0:csrdispl[l][neuron]])
+#pragma omp target enter data map(to:csrvalue[l][0:csrdispl[l][neuron]])
 #endif
     }
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target enter data map(alloc:currfeat[0:crbatch*neuron])
-#pragma omp target enter data map(alloc:nextfeat[0:crbatch*neuron])
-#pragma omp target enter data map(alloc:active[0:crbatch])
+#pragma omp target enter data map(to:currfeat[0:crbatch*neuron])
+#pragma omp target enter data map(to:nextfeat[0:crbatch*neuron])
+#pragma omp target enter data map(to:active[0:crbatch])
 #endif
 }
 
@@ -68,16 +68,16 @@ void final_gpu() {
     for(INDPREC l = 0; l < layer; l++){
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target exit data map(delete:csrdispl[l][0:neuron+1])
-#pragma omp target exit data map(delete:csrindex[l][0:csrdispl[l][neuron]])
-#pragma omp target exit data map(delete:csrvalue[l][0:csrdispl[l][neuron]])
+#pragma omp target exit data map(from:csrdispl[l][0:neuron+1])
+#pragma omp target exit data map(from:csrindex[l][0:csrdispl[l][neuron]])
+#pragma omp target exit data map(from:csrvalue[l][0:csrdispl[l][neuron]])
 #endif
     }
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target exit data map(delete:currfeat[0:crbatch*neuron])
-#pragma omp target exit data map(delete:nextfeat[0:crbatch*neuron])
-#pragma omp target exit data map(delete:active[0:crbatch])
+#pragma omp target exit data map(from:currfeat[0:crbatch*neuron])
+#pragma omp target exit data map(from:nextfeat[0:crbatch*neuron])
+#pragma omp target exit data map(from:active[0:crbatch])
 #endif
 }
 
@@ -96,8 +96,10 @@ double kernel_spmm(INDPREC l) {
 #pragma omp parallel for default(shared) \
    collapse(2)
 #else
-#pragma omp target teams distribute parallel for \
-   collapse(2)
+#pragma omp target teams loop \
+  collapse(2) \
+  map(to: currfeat[0:crbatch*neuron], nextfeat[0:crbatch*neuron], active[0:crbatch]) \
+  map(to: csrdispl[l][0:neuron+1], csrindex[l][0:csrdispl[l][neuron]], csrvalue[l][0:csrdispl[l][neuron]])
 #endif
     for (INDPREC i = 0; i < neuron; i++) {
       for (INDPREC j = 0; j < crbatch; j++) {
@@ -110,39 +112,26 @@ double kernel_spmm(INDPREC l) {
       }
     }
    double t1 = omp_get_wtime();
-                                        
+
 #if defined(USE_OMP_HOST)
-#pragma omp parallel for default(shared)
 #else
-#pragma omp target teams distribute parallel for simd
-#endif
+#pragma omp target update from(nextfeat[0:crbatch*neuron])
+#endif                                       
+
    for(INDPREC i = 0; i < crbatch; i++) {
         active[i] = 0;
-#if defined(USE_OMP_HOST)
-#pragma omp simd 
-#else
-#endif
        for(INDPREC j = 0; j < neuron; j++) {
             if(nextfeat[i * neuron + j] =  ReLU(nextfeat[i * neuron + j] + bias))
                 active[i] += 1;
         }
     }
 
-#if defined(USE_OMP_HOST)
-#else
-#pragma omp target update from(nextfeat[0:crbatch*neuron], active[0:crbatch])
-#endif
-
-    INDPREC feature = 0, fet = 0;
-#pragma omp parallel for default(shared) schedule(static)
+    INDPREC feature = 0;
     for(INDPREC i = 0; i < crbatch; i++) {
         if(active[i]) {
-#pragma omp atomic read
-            fet = feature;
             for(INDPREC j = 0; j < neuron; j++) {
-                nextfeat[fet * neuron + j] = nextfeat[i * neuron + j];
+                nextfeat[feature * neuron + j] = nextfeat[i * neuron + j];
             }
-#pragma omp atomic update
             categories[feature] = categories[i];
             feature++;
         }
@@ -208,8 +197,6 @@ int main(int argc, char* argv[]) {
     active = new int [crbatch];
     categories = new INDPREC[crbatch];
 
-    
-    
     printf("%d neurons, %d layers", neuron, layer) ;
     printf("\n");
     printf("READING WEIGHTS\n");
@@ -242,16 +229,6 @@ int main(int argc, char* argv[]) {
     final_gpu(); 
     printf("Inference time : %lfs, %lfs, %f TTEPS\n", gemm_time, all_time, long((long)batch * (long)neuron * 32 * layer) / gemm_time / 1e12);
 	 
-    /*FEATPREC *sumfeat = new FEATPREC[batch];
-    std::fill(sumfeat, sumfeat + batch, 0.0);
-    for(INDPREC i = 0; i < batch; i++) {
-      FEATPREC tmp = 0.0;
-      for(INDPREC j = 0; j < neuron; j++) {
-        tmp += nextfeat[i * neuron + j];
-      }
-      sumfeat[i] = tmp;
-    }*/
-
     std::string slayer = std::to_string(layer);
     std::string sneuron = std::to_string(neuron);
     std::string sbatch = std::to_string(batch);
@@ -269,7 +246,6 @@ int main(int argc, char* argv[]) {
         ofile << categories[i] + 1 << "\n";
     }
     ofile.close();
-    delete[] sumfeat;
 
     return 0;
 }
