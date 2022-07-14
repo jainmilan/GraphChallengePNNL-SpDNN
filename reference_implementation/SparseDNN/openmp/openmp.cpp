@@ -41,6 +41,8 @@ double timecopy = 0.0;
 INDPREC *numbatch;
 INDPREC *batchdispl;
 
+INDPREC *categories;
+
 FEATPREC ReLU(FEATPREC x){
     return x<0.0?0.0:x>32.0?32.0:x;
  };
@@ -141,6 +143,7 @@ double kernel_spmm(INDPREC l) {
                 nextfeat[fet * neuron + j] = nextfeat[i * neuron + j];
             }
 #pragma omp atomic update
+            categories[feature] = categories[i];
             feature++;
         }
     }
@@ -203,6 +206,8 @@ int main(int argc, char* argv[]) {
     nextfeat = new FEATPREC[neuron*(long)crbatch];
   
     active = new int [crbatch];
+    categories = new INDPREC[crbatch];
+
     
     
     printf("%d neurons, %d layers", neuron, layer) ;
@@ -214,6 +219,7 @@ int main(int argc, char* argv[]) {
 
     for(int k = 0; k < crbatch; k++){
       active[k] = neuron;
+      categories[k] = k;
     }
     
     setup_gpu();
@@ -236,7 +242,7 @@ int main(int argc, char* argv[]) {
     final_gpu(); 
     printf("Inference time : %lfs, %lfs, %f TTEPS\n", gemm_time, all_time, long((long)batch * (long)neuron * 32 * layer) / gemm_time / 1e12);
 	 
-    FEATPREC *sumfeat = new FEATPREC[batch];
+    /*FEATPREC *sumfeat = new FEATPREC[batch];
     std::fill(sumfeat, sumfeat + batch, 0.0);
     for(INDPREC i = 0; i < batch; i++) {
       FEATPREC tmp = 0.0;
@@ -244,7 +250,7 @@ int main(int argc, char* argv[]) {
         tmp += nextfeat[i * neuron + j];
       }
       sumfeat[i] = tmp;
-    }
+    }*/
 
     std::string slayer = std::to_string(layer);
     std::string sneuron = std::to_string(neuron);
@@ -259,8 +265,8 @@ int main(int argc, char* argv[]) {
     std::ofstream ofile(outfilename);
     if (ofile.is_open())
     {
-      for (INDPREC i = 0; i < batch; i++)
-        ofile << sumfeat[i] << "\n";
+      for (INDPREC i = 0; i < crbatch; i++)
+        ofile << categories[i] + 1 << "\n";
     }
     ofile.close();
     delete[] sumfeat;
