@@ -2,7 +2,9 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <cstring>
 #include <fstream>
+
 #include <omp.h>
 #include "vars.h"
 
@@ -26,7 +28,8 @@ VALPREC **csrvalue;
 FEATPREC *currfeat;
 FEATPREC *nextfeat; 
 
-int *active;   
+INDPREC *active;   
+INDPREC crbatch;
 
 double timeio;
 double timetot;
@@ -53,9 +56,9 @@ void setup_gpu() {
     }
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target enter data map(alloc:currfeat[0:batch*neuron])
-#pragma omp target enter data map(alloc:nextfeat[0:batch*neuron])
-#pragma omp target enter data map(alloc:active[0:batch])
+#pragma omp target enter data map(alloc:currfeat[0:crbatch*neuron])
+#pragma omp target enter data map(alloc:nextfeat[0:crbatch*neuron])
+#pragma omp target enter data map(alloc:active[0:crbatch])
 #endif
 }
 
@@ -70,13 +73,21 @@ void final_gpu() {
     }
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target exit data map(delete:currfeat[0:batch*neuron])
-#pragma omp target exit data map(delete:nextfeat[0:batch*neuron])
-#pragma omp target exit data map(delete:active[0:batch])
+#pragma omp target exit data map(delete:currfeat[0:crbatch*neuron])
+#pragma omp target exit data map(delete:nextfeat[0:crbatch*neuron])
+#pragma omp target exit data map(delete:active[0:crbatch])
 #endif
 }
 
 double kernel_spmm(INDPREC l) {
+
+  std::memset(nextfeat, 0, sizeof(FEATPREC)*crbatch*neuron);
+  std::memset(active, 0, sizeof(INDPREC)*crbatch);
+
+#if defined(USE_OMP_HOST)
+#else
+#pragma omp target update to(currfeat[0:crbatch*neuron], nextfeat[0:crbatch*neuron], active[0:crbatch])
+#endif
 
    double t0 = omp_get_wtime();
 #if defined(USE_OMP_HOST)
@@ -87,7 +98,7 @@ double kernel_spmm(INDPREC l) {
    collapse(2)
 #endif
     for (INDPREC i = 0; i < neuron; i++) {
-      for (INDPREC j = 0; j < batch; j++) {
+      for (INDPREC j = 0; j < crbatch; j++) {
         VALPREC result = 0;
         for (INDPREC p = csrdispl[l][i]; p < csrdispl[l][i+1]; p++) {
           const INDPREC k = csrindex[l][p];
@@ -103,7 +114,7 @@ double kernel_spmm(INDPREC l) {
 #else
 #pragma omp target teams distribute parallel for simd
 #endif
-   for(INDPREC i = 0; i < batch; i++) {
+   for(INDPREC i = 0; i < crbatch; i++) {
         active[i] = 0;
 #if defined(USE_OMP_HOST)
 #pragma omp simd 
@@ -117,12 +128,12 @@ double kernel_spmm(INDPREC l) {
 
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target update from(currfeat[0:batch*neuron], nextfeat[0:batch*neuron], active[0:batch])
+#pragma omp target update from(nextfeat[0:crbatch*neuron], active[0:crbatch])
 #endif
 
     INDPREC feature = 0, fet = 0;
 #pragma omp parallel for default(shared) schedule(static)
-    for(INDPREC i = 0; i < batch; i++) {
+    for(INDPREC i = 0; i < crbatch; i++) {
         if(active[i]) {
 #pragma omp atomic read
             fet = feature;
@@ -134,10 +145,11 @@ double kernel_spmm(INDPREC l) {
         }
     }
 
-    batch = feature;
+    crbatch = feature;
     FEATPREC *tempfeat = currfeat;
     currfeat = nextfeat;
     nextfeat = tempfeat;
+
     return double(t1-t0);
 }
 
@@ -167,6 +179,13 @@ int main(int argc, char* argv[]) {
     }
 
     dataset = (char*)inputFileName.c_str();
+    std::cout << "Input data path: " << dataset << std::endl;
+    std::cout << "#Neurons: " << neuron << std::endl;
+    std::cout << "#Layers: " << layer << std::endl;
+    std::cout << "#Batches: " << batch << std::endl;
+    std::cout << "#Inputs: " << input << std::endl;
+    std::cout << "Bias: " << bias << std::endl;
+
     /*
     dataset = "/lus/grand/projects/GRACE/spdnn/dataset";///qfs/projects/pacer/leeh736/dataset"; 
     char *chartemp;
@@ -176,13 +195,14 @@ int main(int argc, char* argv[]) {
     input = 392191985; // 392191985; // 98858913; // 25019051; //6374505;
     bias = 0;
     */
+    crbatch = batch;
     csrdispl = new INDPREC*[layer];
     csrindex = new INDPREC*[layer];
     csrvalue = new VALPREC*[layer];
-    currfeat = new FEATPREC[neuron*(long)batch];
-    nextfeat = new FEATPREC[neuron*(long)batch];
+    currfeat = new FEATPREC[neuron*(long)crbatch];
+    nextfeat = new FEATPREC[neuron*(long)crbatch];
   
-    active = new int [batch];
+    active = new int [crbatch];
     
     
     printf("%d neurons, %d layers", neuron, layer) ;
@@ -192,7 +212,7 @@ int main(int argc, char* argv[]) {
     printf("READING INPUT\n");
     readinput();
 
-    for(int k = 0; k < batch; k++){
+    for(int k = 0; k < crbatch; k++){
       active[k] = neuron;
     }
     
@@ -341,7 +361,7 @@ void parseCommandLine(int argc, char** const argv)
         bias = atof(optarg);
         break;
       case 'h':
-        std::cout << "./inference -f <file-path> -i <input> -a <#batches> -n <#neurons> -l <#layers> -b <bias>" << std::endl;
+        std::cout << "./inference -f <file-path> -i <input> -o <output path> -a <#batches> -n <#neurons> -l <#layers> -b <bias>" << std::endl;
         break;  
      default:
         assert(0 && "Should not reach here!!");
