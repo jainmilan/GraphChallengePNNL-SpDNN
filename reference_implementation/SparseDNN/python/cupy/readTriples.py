@@ -14,7 +14,7 @@ def readTriples(fname, n_rows, n_features, subtract=True):
     # A = csr_matrix((ijv[:, 2], (ijv[:, 0], ijv[:, 1])));
     # print(A.shape)
     B = csr_matrix((ijv[:, 2], (ijv[:, 0], ijv[:, 1])), shape=(n_rows, n_features));
-    print(B.shape)
+    # print(B.shape)
     
     return B
 

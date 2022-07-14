@@ -18,8 +18,8 @@ def inferenceReLUvec(W, bias, Y0):
         # % that requires *left* multiplication feature *row* vectors.
         # print(Y)
         # print(W[i])
-        print(Y.size)
-        print(Y.count_nonzero(), W[i].count_nonzero())
+        # print(Y.size)
+        # print(Y.count_nonzero(), W[i].count_nonzero())
         Y = Y @ W[i]
 
         # Apply bias to non-zero entries.
