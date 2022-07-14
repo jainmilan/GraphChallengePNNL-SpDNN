@@ -249,8 +249,12 @@ int main(int argc, char* argv[]) {
     std::string slayer = std::to_string(layer);
     std::string sneuron = std::to_string(neuron);
     std::string sbatch = std::to_string(batch);
-    std::string outfilename = outFilePath + "/" + slayer + "-" + sneuron + "-" + sbatch + "-results.txt";
-    
+#if defined(USE_OMP_HOST)
+    std::string outfilename = outFilePath + "/" + slayer + "-" + sneuron + "-" + sbatch + "cpu-results.txt";
+#else
+    std::string outfilename = outFilePath + "/" + slayer + "-" + sneuron + "-" + sbatch + "gpu-results.txt";
+#endif
+
     std::cout << "Storing output results in: " << outfilename << std::endl;
     std::ofstream ofile(outfilename);
     if (ofile.is_open())
