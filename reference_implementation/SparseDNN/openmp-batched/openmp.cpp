@@ -49,48 +49,50 @@ FEATPREC ReLU(FEATPREC x){
     return x<0.0?0.0:x>32.0?32.0:x;
  };
 
-void setup_gpu_batch(INDPREC dev, INDPREC start, INDPREC end) {
+void setup_gpu_batch(INDPREC dev, INDPREC pbatch) {
     for(INDPREC l = 0; l < layer; l++){
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target enter data map(to:csrdispl[l][0:neuron+1]) device(dev)
-#pragma omp target enter data map(to:csrindex[l][0:csrdispl[l][neuron]]) device(dev)
-#pragma omp target enter data map(to:csrvalue[l][0:csrdispl[l][neuron]]) device(dev)
+#pragma omp target enter data map(alloc:csrdispl[l][0:neuron+1]) device(dev)
+#pragma omp target enter data map(alloc:csrindex[l][0:csrdispl[l][neuron]]) device(dev)
+#pragma omp target enter data map(alloc:csrvalue[l][0:csrdispl[l][neuron]]) device(dev)
 #endif
     }
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target enter data map(to:currfeat[start*neuron:end*neuron]) device(dev)
-#pragma omp target enter data map(to:nextfeat[start*neuron:end*neuron]) device(dev)
-#pragma omp target enter data map(to:active[start:end]) device(dev)
+#pragma omp target enter data map(alloc:currfeat[0:pbatch*neuron]) device(dev)
+#pragma omp target enter data map(alloc:nextfeat[0:pbatch*neuron]) device(dev)
+#pragma omp target enter data map(alloc:active[0:pbatch]) device(dev)
 #endif
 }
 
-void final_gpu_batch(INDPREC dev, INDPREC start, INDPREC end) {
+void final_gpu_batch(INDPREC dev, INDPREC pbatch) {
     for(INDPREC l = 0; l < layer; l++){
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target exit data map(from:csrdispl[l][0:neuron+1]) device(dev)
-#pragma omp target exit data map(from:csrindex[l][0:csrdispl[l][neuron]]) device(dev)
-#pragma omp target exit data map(from:csrvalue[l][0:csrdispl[l][neuron]]) device(dev)
+#pragma omp target exit data map(delete:csrdispl[l][0:neuron+1]) device(dev)
+#pragma omp target exit data map(delete:csrindex[l][0:csrdispl[l][neuron]]) device(dev)
+#pragma omp target exit data map(delete:csrvalue[l][0:csrdispl[l][neuron]]) device(dev)
 #endif
     }
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target exit data map(from:currfeat[start*neuron:end*neuron]) device(dev)
-#pragma omp target exit data map(from:nextfeat[start*neuron:end*neuron]) device(dev)
-#pragma omp target exit data map(from:active[start:end]) device(dev)
+#pragma omp target exit data map(delete:currfeat[0:pbatch*neuron]) device(dev)
+#pragma omp target exit data map(delete:nextfeat[0:pbatch*neuron]) device(dev)
+#pragma omp target exit data map(delete:active[0:pbatch]) device(dev)
 #endif
 }
 
 double kernel_spmm(INDPREC l, INDPREC dev, INDPREC* pbatch, INDPREC start, INDPREC end) {
   
-  std::memset(nextfeat + start*neuron, 0, sizeof(FEATPREC)*(*pbatch));
+  nextfeat = nextfeat + start*neuron*sizeof(FEATPREC);
+  currfeat = currfeat + start*neuron*sizeof(FEATPREC);
+  std::memset(nextfeat, 0, sizeof(FEATPREC)*(*pbatch));
   std::memset(active + start, 0, sizeof(INDPREC)*(*pbatch));
 
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target update to(currfeat[start*neuron:end*neuron], nextfeat[start*neuron:end*neuron], active[start:end]) device(dev)
+#pragma omp target update to(currfeat[0:*pbatch*neuron], nextfeat[0:*pbatch*neuron]) device(dev)
 #endif
 
    double t0 = omp_get_wtime();
@@ -100,11 +102,11 @@ double kernel_spmm(INDPREC l, INDPREC dev, INDPREC* pbatch, INDPREC start, INDPR
 #else
 #pragma omp target teams loop \
    collapse(2) device(dev) \
-   map(to: currfeat[start*neuron:end*neuron], nextfeat[start*neuron:end*neuron], active[start:end]) \
+   map(to: currfeat[0:*pbatch*neuron], nextfeat[0:*pbatch*neuron]) \
    map(to: csrdispl[l][0:neuron+1], csrindex[l][0:csrdispl[l][neuron]], csrvalue[l][0:csrdispl[l][neuron]])
 #endif
    for (INDPREC i = 0; i < neuron; i++) {
-     for (INDPREC j = start; j < end; j++) {
+     for (INDPREC j = 0; j < *pbatch; j++) {
        VALPREC result = 0;
        for (INDPREC p = csrdispl[l][i]; p < csrdispl[l][i+1]; p++) {
          const INDPREC k = csrindex[l][p];
@@ -117,29 +119,30 @@ double kernel_spmm(INDPREC l, INDPREC dev, INDPREC* pbatch, INDPREC start, INDPR
 
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target update from(nextfeat[start*neuron:end*neuron]) device(dev)
+#pragma omp target update from(nextfeat[0:*pbatch*neuron]) device(dev)
 #endif                                       
 
-   for(INDPREC i = start; i < end; i++) {
+   for(INDPREC i = 0; i < *pbatch; i++) {
         active[i] = 0;
        for(INDPREC j = 0; j < neuron; j++) {
             if(nextfeat[i * neuron + j] =  ReLU(nextfeat[i * neuron + j] + bias))
-                active[i] += 1;
+                active[i+start] += 1;
         }
     }
 
-    INDPREC feature = 0;
-    for(INDPREC i = start; i < end; i++) {
-        if(active[i]) {
+    INDPREC feature = start, nfeatures = 0;
+    for(INDPREC i = 0; i < *pbatch; i++) {
+        if(active[i+start]) {
             for(INDPREC j = 0; j < neuron; j++) {
                 nextfeat[feature * neuron + j] = nextfeat[i * neuron + j];
             }
-            categories[feature] = categories[i];
+            categories[feature] = categories[i+start];
             feature++;
+            nfeatures++;
         }
     }
 
-    *pbatch = feature;
+    *pbatch = nfeatures;
     FEATPREC *tempfeat = currfeat;
     currfeat = nextfeat;
     nextfeat = tempfeat;
@@ -230,10 +233,7 @@ int main(int argc, char* argv[]) {
         pbatch = (crbatch / ngpus) + (crbatch % ngpus);
       else
         pbatch = (crbatch / ngpus);
-      const INDPREC start = pbatch*k;
-      const INDPREC end = start + pbatch;
-
-      setup_gpu_batch(k, start, end);
+      setup_gpu_batch(k, pbatch);
     }
 
     printf("INFERENCE......\n");
@@ -273,10 +273,8 @@ int main(int argc, char* argv[]) {
         pbatch = (crbatch / ngpus) + (crbatch % ngpus);
       else
         pbatch = (crbatch / ngpus);
-      const INDPREC start = pbatch*k;
-      const INDPREC end = start + pbatch;
 
-      final_gpu_batch(k, start, end);
+      final_gpu_batch(k, pbatch);
     }
 
     std::string slayer = std::to_string(layer);
