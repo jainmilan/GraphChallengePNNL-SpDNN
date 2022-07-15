@@ -62,7 +62,6 @@ void setup_gpu_batch(INDPREC dev, INDPREC pbatch) {
 #else
 #pragma omp target enter data map(alloc:currfeat[0:pbatch*neuron]) device(dev)
 #pragma omp target enter data map(alloc:nextfeat[0:pbatch*neuron]) device(dev)
-#pragma omp target enter data map(alloc:active[0:pbatch]) device(dev)
 #endif
 }
 
@@ -79,13 +78,12 @@ void final_gpu_batch(INDPREC dev, INDPREC pbatch) {
 #else
 #pragma omp target exit data map(delete:currfeat[0:pbatch*neuron]) device(dev)
 #pragma omp target exit data map(delete:nextfeat[0:pbatch*neuron]) device(dev)
-#pragma omp target exit data map(delete:active[0:pbatch]) device(dev)
 #endif
 }
 
 double kernel_spmm(INDPREC l, INDPREC dev, INDPREC* pbatch, INDPREC offset) {
   
-  std::memset(active + offset, 0, sizeof(INDPREC)*(*pbatch));
+  std::memset(active, 0, sizeof(INDPREC)*(*pbatch));
   std::memset(nextfeat, 0, sizeof(FEATPREC)*(*pbatch));
 
 #if defined(USE_OMP_HOST)
@@ -119,22 +117,22 @@ double kernel_spmm(INDPREC l, INDPREC dev, INDPREC* pbatch, INDPREC offset) {
 #else
 #pragma omp target update from(nextfeat[0:*pbatch*neuron]) device(dev)
 #endif                                       
-
+   
    for(INDPREC i = 0; i < *pbatch; i++) {
-        active[i+offset] = 0;
+        active[i] = 0;
        for(INDPREC j = 0; j < neuron; j++) {
             if(nextfeat[i * neuron + j] =  ReLU(nextfeat[i * neuron + j] + bias))
-                active[i+offset] += 1;
+                active[i] += 1;
         }
     }
 
     INDPREC feature = 0;
     for(INDPREC i = 0; i < *pbatch; i++) {
-        if(active[i+offset]) {
+        if(active[i]) {
             for(INDPREC j = 0; j < neuron; j++) {
                 nextfeat[feature * neuron + j] = nextfeat[i * neuron + j];
             }
-            categories[feature+offset] = categories[i+offset];
+            categories[feature+offset] = categories[i];
             feature++;
         }
     }
@@ -221,60 +219,43 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
-    // setup GPUs
- #pragma omp parallel num_threads(ngpus)
-    {     
-      const INDPREC k = omp_get_thread_num(); 
-      INDPREC pbatch;
-      if (k == ngpus - 1)
-        pbatch = (crbatch / ngpus) + (crbatch % ngpus);
-      else
-        pbatch = (crbatch / ngpus);
-      setup_gpu_batch(k, pbatch);
-    }
-
+    INDPREC pbatch, offset;
+    
     printf("INFERENCE......\n");
     printf("for %d layers......\n", layer);
     double spmm_times = 0; 
     clock_t total_start = clock();
 #pragma omp parallel num_threads(ngpus)
     {
-        const INDPREC k = omp_get_thread_num(); 
-        INDPREC pbatch;
-        if (k == ngpus - 1)
-          pbatch = (crbatch / ngpus) + (crbatch % ngpus);
-        else
-          pbatch = (crbatch / ngpus);
-        const INDPREC offset = pbatch*k;
-        nextfeat = nextfeat + offset*neuron;
-        currfeat = currfeat + offset*neuron;
-
-        for(int i = 0; i < layer; ++i) {
-          printf("%d:[%d]", k, i);
-          fflush(stdout);
-          auto t = kernel_spmm(i, k, &pbatch, offset);
-          spmm_times += double(t);
-          printf("%d:(%lf)\n", k, t);
-          fflush(stdout);
-        }
-      }
-    clock_t end_start = clock();
-    auto gemm_time = double(spmm_times);
-    auto all_time = double(end_start - total_start)  / CLOCKS_PER_SEC;
-    printf("Inference time (#%d GPUs): %lfs, %lfs, %f TTEPS\n", ngpus, gemm_time, all_time, long((long)batch * (long)neuron * 32 * layer) / gemm_time / 1e12);
-	
-   // finalize GPUs 
-#pragma omp parallel num_threads(ngpus)
-    {
       const INDPREC k = omp_get_thread_num(); 
-      INDPREC pbatch;
       if (k == ngpus - 1)
         pbatch = (crbatch / ngpus) + (crbatch % ngpus);
       else
         pbatch = (crbatch / ngpus);
 
+      offset = pbatch*k;
+      nextfeat = nextfeat + offset*neuron;
+      currfeat = currfeat + offset*neuron;
+      active = active + offset;
+      categories = categories + offset;
+
+      setup_gpu_batch(k, pbatch);       
+
+      for(int i = 0; i < layer; ++i) {
+        printf("%d:[%d]", k, i);
+        fflush(stdout);
+        auto t = kernel_spmm(i, k, &pbatch, offset);
+        spmm_times += double(t);
+        printf("%d:(%lf)\n", k, t);
+        fflush(stdout);
+      }
+
       final_gpu_batch(k, pbatch);
     }
+    clock_t end_start = clock();
+    auto gemm_time = double(spmm_times);
+    auto all_time = double(end_start - total_start)  / CLOCKS_PER_SEC;
+    printf("Inference time (#%d GPUs): %lfs, %lfs, %f TTEPS\n", ngpus, gemm_time, all_time, long((long)batch * (long)neuron * 32 * layer) / gemm_time / 1e12);
 
     std::string slayer = std::to_string(layer);
     std::string sneuron = std::to_string(neuron);
