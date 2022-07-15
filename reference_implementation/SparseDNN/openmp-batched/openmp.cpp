@@ -85,10 +85,8 @@ void final_gpu_batch(INDPREC dev, INDPREC pbatch) {
 
 double kernel_spmm(INDPREC l, INDPREC dev, INDPREC* pbatch, INDPREC offset) {
   
-  nextfeat = nextfeat + offset*neuron*sizeof(FEATPREC);
-  currfeat = currfeat + offset*neuron*sizeof(FEATPREC);
-  std::memset(nextfeat, 0, sizeof(FEATPREC)*(*pbatch));
   std::memset(active + offset, 0, sizeof(INDPREC)*(*pbatch));
+  std::memset(nextfeat, 0, sizeof(FEATPREC)*(*pbatch));
 
 #if defined(USE_OMP_HOST)
 #else
@@ -248,6 +246,9 @@ int main(int argc, char* argv[]) {
         else
           pbatch = (crbatch / ngpus);
         const INDPREC offset = pbatch*k;
+        nextfeat = nextfeat + offset*neuron;
+        currfeat = currfeat + offset*neuron;
+
         for(int i = 0; i < layer; ++i) {
           printf("%d:[%d]", k, i);
           fflush(stdout);
