@@ -83,12 +83,12 @@ void final_gpu_batch(INDPREC dev, INDPREC pbatch) {
 #endif
 }
 
-double kernel_spmm(INDPREC l, INDPREC dev, INDPREC* pbatch, INDPREC start, INDPREC end) {
+double kernel_spmm(INDPREC l, INDPREC dev, INDPREC* pbatch, INDPREC offset) {
   
-  nextfeat = nextfeat + start*neuron*sizeof(FEATPREC);
-  currfeat = currfeat + start*neuron*sizeof(FEATPREC);
+  nextfeat = nextfeat + offset*neuron*sizeof(FEATPREC);
+  currfeat = currfeat + offset*neuron*sizeof(FEATPREC);
   std::memset(nextfeat, 0, sizeof(FEATPREC)*(*pbatch));
-  std::memset(active + start, 0, sizeof(INDPREC)*(*pbatch));
+  std::memset(active + offset, 0, sizeof(INDPREC)*(*pbatch));
 
 #if defined(USE_OMP_HOST)
 #else
@@ -123,26 +123,25 @@ double kernel_spmm(INDPREC l, INDPREC dev, INDPREC* pbatch, INDPREC start, INDPR
 #endif                                       
 
    for(INDPREC i = 0; i < *pbatch; i++) {
-        active[i] = 0;
+        active[i+offset] = 0;
        for(INDPREC j = 0; j < neuron; j++) {
             if(nextfeat[i * neuron + j] =  ReLU(nextfeat[i * neuron + j] + bias))
-                active[i+start] += 1;
+                active[i+offset] += 1;
         }
     }
 
-    INDPREC feature = start, nfeatures = 0;
+    INDPREC feature = 0;
     for(INDPREC i = 0; i < *pbatch; i++) {
-        if(active[i+start]) {
+        if(active[i+offset]) {
             for(INDPREC j = 0; j < neuron; j++) {
                 nextfeat[feature * neuron + j] = nextfeat[i * neuron + j];
             }
-            categories[feature] = categories[i+start];
+            categories[feature+offset] = categories[i+offset];
             feature++;
-            nfeatures++;
         }
     }
 
-    *pbatch = nfeatures;
+    *pbatch = feature;
     FEATPREC *tempfeat = currfeat;
     currfeat = nextfeat;
     nextfeat = tempfeat;
@@ -248,12 +247,11 @@ int main(int argc, char* argv[]) {
           pbatch = (crbatch / ngpus) + (crbatch % ngpus);
         else
           pbatch = (crbatch / ngpus);
-        const INDPREC start = pbatch*k;
+        const INDPREC offset = pbatch*k;
         for(int i = 0; i < layer; ++i) {
-          const INDPREC end = start + pbatch;
           printf("%d:[%d]", k, i);
           fflush(stdout);
-          auto t = kernel_spmm(i, k, &pbatch, start, end);
+          auto t = kernel_spmm(i, k, &pbatch, offset);
           spmm_times += double(t);
           printf("%d:(%lf)\n", k, t);
           fflush(stdout);
