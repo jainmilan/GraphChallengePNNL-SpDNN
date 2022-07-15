@@ -13,6 +13,7 @@ static char *dataset;
 static INDPREC neuron;
 static INDPREC layer;
 static INDPREC batch;
+static INDPREC ngpus;
 static INDPREC input;
 static VALPREC bias;
 static std::string inputFileName;
@@ -30,6 +31,7 @@ FEATPREC *nextfeat;
 
 INDPREC *active;   
 INDPREC crbatch;
+INDPREC pbatch;
 
 double timeio;
 double timetot;
@@ -47,48 +49,50 @@ FEATPREC ReLU(FEATPREC x){
     return x<0.0?0.0:x>32.0?32.0:x;
  };
 
-void setup_gpu() {
+void setup_gpu_batch(INDPREC dev, INDPREC pbatch) {
     for(INDPREC l = 0; l < layer; l++){
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target enter data map(to:csrdispl[l][0:neuron+1])
-#pragma omp target enter data map(to:csrindex[l][0:csrdispl[l][neuron]])
-#pragma omp target enter data map(to:csrvalue[l][0:csrdispl[l][neuron]])
+#pragma omp target enter data map(alloc:csrdispl[l][0:neuron+1]) device(dev)
+#pragma omp target enter data map(alloc:csrindex[l][0:csrdispl[l][neuron]]) device(dev)
+#pragma omp target enter data map(alloc:csrvalue[l][0:csrdispl[l][neuron]]) device(dev)
 #endif
     }
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target enter data map(to:currfeat[0:crbatch*neuron])
-#pragma omp target enter data map(to:nextfeat[0:crbatch*neuron])
-#pragma omp target enter data map(to:active[0:crbatch])
+#pragma omp target enter data map(alloc:currfeat[0:pbatch*neuron]) device(dev)
+#pragma omp target enter data map(alloc:nextfeat[0:pbatch*neuron]) device(dev)
+#pragma omp target enter data map(alloc:active[0:pbatch]) device(dev)
 #endif
 }
 
-void final_gpu() {
+void final_gpu_batch(INDPREC dev, INDPREC pbatch) {
     for(INDPREC l = 0; l < layer; l++){
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target exit data map(from:csrdispl[l][0:neuron+1])
-#pragma omp target exit data map(from:csrindex[l][0:csrdispl[l][neuron]])
-#pragma omp target exit data map(from:csrvalue[l][0:csrdispl[l][neuron]])
+#pragma omp target exit data map(delete:csrdispl[l][0:neuron+1]) device(dev)
+#pragma omp target exit data map(delete:csrindex[l][0:csrdispl[l][neuron]]) device(dev)
+#pragma omp target exit data map(delete:csrvalue[l][0:csrdispl[l][neuron]]) device(dev)
 #endif
     }
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target exit data map(from:currfeat[0:crbatch*neuron])
-#pragma omp target exit data map(from:nextfeat[0:crbatch*neuron])
-#pragma omp target exit data map(from:active[0:crbatch])
+#pragma omp target exit data map(delete:currfeat[0:pbatch*neuron]) device(dev)
+#pragma omp target exit data map(delete:nextfeat[0:pbatch*neuron]) device(dev)
+#pragma omp target exit data map(delete:active[0:pbatch]) device(dev)
 #endif
 }
 
-double kernel_spmm(INDPREC l) {
-
-  std::memset(nextfeat, 0, sizeof(FEATPREC)*crbatch*neuron);
-  std::memset(active, 0, sizeof(INDPREC)*crbatch);
+double kernel_spmm(INDPREC l, INDPREC dev, INDPREC* pbatch, INDPREC offset) {
+  
+  nextfeat = nextfeat + offset*neuron*sizeof(FEATPREC);
+  currfeat = currfeat + offset*neuron*sizeof(FEATPREC);
+  std::memset(nextfeat, 0, sizeof(FEATPREC)*(*pbatch));
+  std::memset(active + offset, 0, sizeof(INDPREC)*(*pbatch));
 
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target update to(currfeat[0:crbatch*neuron], nextfeat[0:crbatch*neuron], active[0:crbatch])
+#pragma omp target update to(currfeat[0:*pbatch*neuron], nextfeat[0:*pbatch*neuron]) device(dev)
 #endif
 
    double t0 = omp_get_wtime();
@@ -97,47 +101,47 @@ double kernel_spmm(INDPREC l) {
    collapse(2)
 #else
 #pragma omp target teams loop \
-  collapse(2) \
-  map(to: currfeat[0:crbatch*neuron], nextfeat[0:crbatch*neuron], active[0:crbatch]) \
-  map(to: csrdispl[l][0:neuron+1], csrindex[l][0:csrdispl[l][neuron]], csrvalue[l][0:csrdispl[l][neuron]])
+   collapse(2) device(dev) \
+   map(to: currfeat[0:*pbatch*neuron], nextfeat[0:*pbatch*neuron]) \
+   map(to: csrdispl[l][0:neuron+1], csrindex[l][0:csrdispl[l][neuron]], csrvalue[l][0:csrdispl[l][neuron]])
 #endif
-    for (INDPREC i = 0; i < neuron; i++) {
-      for (INDPREC j = 0; j < crbatch; j++) {
-        VALPREC result = 0;
-        for (INDPREC p = csrdispl[l][i]; p < csrdispl[l][i+1]; p++) {
-          const INDPREC k = csrindex[l][p];
-          result += csrvalue[l][p] * currfeat[j*neuron + k];
-        }
-        nextfeat[j*neuron + i] = result;
-      }
-    }
+   for (INDPREC i = 0; i < neuron; i++) {
+     for (INDPREC j = 0; j < *pbatch; j++) {
+       VALPREC result = 0;
+       for (INDPREC p = csrdispl[l][i]; p < csrdispl[l][i+1]; p++) {
+         const INDPREC k = csrindex[l][p];
+         result += csrvalue[l][p] * currfeat[j*neuron + k];
+       }
+       nextfeat[j*neuron + i] = result;
+     }
+   }
    double t1 = omp_get_wtime();
 
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target update from(nextfeat[0:crbatch*neuron])
+#pragma omp target update from(nextfeat[0:*pbatch*neuron]) device(dev)
 #endif                                       
 
-   for(INDPREC i = 0; i < crbatch; i++) {
-        active[i] = 0;
+   for(INDPREC i = 0; i < *pbatch; i++) {
+        active[i+offset] = 0;
        for(INDPREC j = 0; j < neuron; j++) {
             if(nextfeat[i * neuron + j] =  ReLU(nextfeat[i * neuron + j] + bias))
-                active[i] += 1;
+                active[i+offset] += 1;
         }
     }
 
     INDPREC feature = 0;
-    for(INDPREC i = 0; i < crbatch; i++) {
-        if(active[i]) {
+    for(INDPREC i = 0; i < *pbatch; i++) {
+        if(active[i+offset]) {
             for(INDPREC j = 0; j < neuron; j++) {
                 nextfeat[feature * neuron + j] = nextfeat[i * neuron + j];
             }
-            categories[feature] = categories[i];
+            categories[feature+offset] = categories[i+offset];
             feature++;
         }
     }
 
-    crbatch = feature;
+    *pbatch = feature;
     FEATPREC *tempfeat = currfeat;
     currfeat = nextfeat;
     nextfeat = tempfeat;
@@ -208,34 +212,77 @@ int main(int argc, char* argv[]) {
       active[k] = neuron;
       categories[k] = k;
     }
-    
-    setup_gpu();
+   
+#if defined(USE_OMP_HOST)
+#else
+    const INDPREC ndev = omp_get_num_devices(); 
+    if (ndev < 1 || ndev < ngpus) {
+      std::cout << "ERROR: No device found or number of actual devices \
+        is less than the passed number...exiting!!!" << std::endl;
+      exit(1);
+    }
+#endif
+
+    // setup GPUs
+ #pragma omp parallel num_threads(ngpus)
+    {     
+      const INDPREC k = omp_get_thread_num(); 
+      INDPREC pbatch;
+      if (k == ngpus - 1)
+        pbatch = (crbatch / ngpus) + (crbatch % ngpus);
+      else
+        pbatch = (crbatch / ngpus);
+      setup_gpu_batch(k, pbatch);
+    }
 
     printf("INFERENCE......\n");
     printf("for %d layers......\n", layer);
     double spmm_times = 0; 
     clock_t total_start = clock();
-    for(int i = 0; i < layer; ++i) {
-        printf("[%d]", i);
-        fflush(stdout);
-        auto t = kernel_spmm(i);
-        spmm_times += double(t);
-        printf(":(%lf)\n", t);
-        fflush(stdout);
-    }
+#pragma omp parallel num_threads(ngpus)
+    {
+        const INDPREC k = omp_get_thread_num(); 
+        INDPREC pbatch;
+        if (k == ngpus - 1)
+          pbatch = (crbatch / ngpus) + (crbatch % ngpus);
+        else
+          pbatch = (crbatch / ngpus);
+        const INDPREC offset = pbatch*k;
+        for(int i = 0; i < layer; ++i) {
+          printf("%d:[%d]", k, i);
+          fflush(stdout);
+          auto t = kernel_spmm(i, k, &pbatch, offset);
+          spmm_times += double(t);
+          printf("%d:(%lf)\n", k, t);
+          fflush(stdout);
+        }
+      }
     clock_t end_start = clock();
     auto gemm_time = double(spmm_times);
     auto all_time = double(end_start - total_start)  / CLOCKS_PER_SEC;
-    final_gpu(); 
-    printf("Inference time : %lfs, %lfs, %f TTEPS\n", gemm_time, all_time, long((long)batch * (long)neuron * 32 * layer) / gemm_time / 1e12);
-	 
+    printf("Inference time (#%d GPUs): %lfs, %lfs, %f TTEPS\n", ngpus, gemm_time, all_time, long((long)batch * (long)neuron * 32 * layer) / gemm_time / 1e12);
+	
+   // finalize GPUs 
+#pragma omp parallel num_threads(ngpus)
+    {
+      const INDPREC k = omp_get_thread_num(); 
+      INDPREC pbatch;
+      if (k == ngpus - 1)
+        pbatch = (crbatch / ngpus) + (crbatch % ngpus);
+      else
+        pbatch = (crbatch / ngpus);
+
+      final_gpu_batch(k, pbatch);
+    }
+
     std::string slayer = std::to_string(layer);
     std::string sneuron = std::to_string(neuron);
     std::string sbatch = std::to_string(batch);
+    std::string sngpus = std::to_string(ngpus);
 #if defined(USE_OMP_HOST)
-    std::string outfilename = outFilePath + "/" + slayer + "-" + sneuron + "-" + sbatch + "cpu-results.txt";
+    std::string outfilename = outFilePath + "/" + slayer + "-" + sneuron + "-" + sbatch + "-" + sngpus + "b-cpu-results.txt";
 #else
-    std::string outfilename = outFilePath + "/" + slayer + "-" + sneuron + "-" + sbatch + "gpu-results.txt";
+    std::string outfilename = outFilePath + "/" + slayer + "-" + sneuron + "-" + sbatch + "-" + sngpus + "gpu-results.txt";
 #endif
 
     std::cout << "Storing output results in: " << outfilename << std::endl;
@@ -323,7 +370,7 @@ void parseCommandLine(int argc, char** const argv)
   int ret;
   optind = 1;
 
-  while ((ret = getopt(argc, argv, "f:o:l:b:i:n:a:h")) != -1) {
+  while ((ret = getopt(argc, argv, "f:o:l:b:i:n:a:g:h")) != -1) {
     switch (ret) {
       case 'f':
         inputFileName.assign(optarg);
@@ -333,6 +380,9 @@ void parseCommandLine(int argc, char** const argv)
         break;
       case 'a':
         batch = atoi(optarg);
+        break;
+      case 'g':
+        ngpus = atoi(optarg);
         break;
       case 'l':
         layer = atoi(optarg);
@@ -347,7 +397,7 @@ void parseCommandLine(int argc, char** const argv)
         bias = atof(optarg);
         break;
       case 'h':
-        std::cout << "./inference -f <file-path> -i <input> -o <output path> -a <#batches> -n <#neurons> -l <#layers> -b <bias>" << std::endl;
+        std::cout << "./inference -f <file-path> -i <input> -o <output path> -a <#batches> -g <#gpus> -n <#neurons> -l <#layers> -b <bias>" << std::endl;
         break;  
      default:
         assert(0 && "Should not reach here!!");

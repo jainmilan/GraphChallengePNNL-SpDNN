@@ -2,6 +2,7 @@
 #include <iostream>
 #include <cusparse.h>
 #include <vector>
+#include <fstream>
 #include "vars.h"
 
 char *dataset;
@@ -26,6 +27,7 @@ VALPREC **csrvalue_d;
 FEATPREC *currfeat;
 FEATPREC *nextfeat; 
 
+
 FEATPREC *currfeat_d;
 FEATPREC *nextfeat_d;
 
@@ -43,6 +45,15 @@ int *numbatch;
 int *batchdispl;
 int mybatch;
 
+FEATPREC *mycurrfeat;
+
+int *categories;
+int *mycategories;
+
+int saved = 0;
+int offset = 0;
+
+
 __device__ float __ReLU(float x){
     return x<0.0?0.0:x>32.0?32.0:x;
 };
@@ -53,7 +64,7 @@ float ReLU(float x){
  };
 
 
-void setup_gpu() {
+void setup_layer() {
     OR_FATAL(cudaSetDevice(0));
     int deviceCount;
     OR_FATAL(cudaGetDeviceCount(&deviceCount));
@@ -75,6 +86,16 @@ void setup_gpu() {
         OR_FATAL(cudaMalloc((void**)&csrvalue_d[l], sizeof(VALPREC) * csrdispl[l][neuron]));
         OR_FATAL(cudaMemcpy(csrvalue_d[l], csrvalue[l], sizeof(VALPREC) * csrdispl[l][neuron], cudaMemcpyHostToDevice));
     }
+}
+
+void setup_feature() {    
+    OR_FATAL(cudaSetDevice(0));
+    int deviceCount;
+    OR_FATAL(cudaGetDeviceCount(&deviceCount));
+    int dev = 0;
+    cudaDeviceProp deviceProp;
+    OR_FATAL(cudaGetDeviceProperties(&deviceProp, dev));
+
     OR_FATAL(cudaMalloc((void**)&currfeat_d, sizeof(FEATPREC) * mybatch * neuron));
     OR_FATAL(cudaMemset(currfeat_d, 0, sizeof(FEATPREC) * mybatch * neuron));
 
@@ -172,6 +193,7 @@ double kernel_spmm(int l) {
             for(int j = 0; j < neuron; ++j) {
                 nextfeat[feature * neuron + j] = nextfeat[i * neuron + j];
             }
+            mycategories[feature] = mycategories[i];
             feature++;
         }
     }
@@ -180,18 +202,22 @@ double kernel_spmm(int l) {
     FEATPREC *tempfeat = currfeat;
     currfeat = nextfeat;
     nextfeat = tempfeat;
+
+    OR_FATAL(cudaFree(currfeat_d));
+    OR_FATAL(cudaFree(nextfeat_d));
+
     return double(elapsed);
 }
 
 int main(int argc, char* argv[]) {
 
-    dataset = "/lus/grand/projects/GRACE/spdnn/dataset";///qfs/projects/pacer/leeh736/dataset"; 
+    dataset = "/qfs/projects/pacer/leeh736/dataset"; // "/lus/grand/projects/GRACE/spdnn/dataset"; 
     char *chartemp;
-    neuron = 65536;
-    layer = 1920;
+    neuron = 1024;
+    layer = 120;
     batch = 60000;
-    input = 392191985; // 392191985; // 98858913; // 25019051; //6374505;
-    bias = 0;
+    input = 6374505; // 392191985; // 98858913; // 25019051; //6374505;
+    bias = -0.3;
     
     mybatch = batch;
   
@@ -202,7 +228,7 @@ int main(int argc, char* argv[]) {
     nextfeat = new FEATPREC[neuron*(long)mybatch];
   
     active = new int [mybatch];
-    
+    categories = new int[mybatch];
     
     printf("%d neurons, %d layers", neuron, layer) ;
     printf("\n");
@@ -213,23 +239,50 @@ int main(int argc, char* argv[]) {
 
     for(int k = 0; k < mybatch; k++){
       active[k] = neuron;
+      categories[k] = k;
     }
     
-
-    setup_gpu();
-
-    printf("INFERENCE......\n");
-    printf("for %d layers......\n", layer);
-    double spmm_times = 0; 
     clock_t total_start = clock();
-    for(int i = 0; i < layer; ++i) {
-        printf("[%d]", i);
-        fflush(stdout);
-        auto t = kernel_spmm(i);
-        spmm_times += double(t);
-        printf(":(%lf)\n", t);
-        fflush(stdout);
+    double spmm_times = 0; 
+    
+    int part_size = 2;
+    mybatch = batch/part_size;
+    mycurrfeat = currfeat;
+    
+    for(offset = 0; offset < batch; offset += mybatch) {
+                
+        mycategories = new int[mybatch];
+        for(int k = 0; k < mybatch; k++) {
+            mycategories[k] = k + offset;
+        }
+
+        currfeat = currfeat+(offset*neuron);
+        setup_layer();
+
+        printf("INFERENCE......\n");
+        printf("for %d layers......\n", layer);
+        for(int i = 0; i < layer; ++i) {
+            setup_feature();
+            printf("[%d]", i);
+            fflush(stdout);
+            auto t = kernel_spmm(i);
+            spmm_times += double(t);
+            printf(":(%lf)\n", t);
+            fflush(stdout);
+        }
+
+        for (int k = 0; k < mybatch; k++) {
+            categories[saved+k] = mycategories[k];
+        }
+        saved += mybatch;
+        mybatch = batch/part_size;
     }
+    mybatch = saved;
+
+    for (int i = 0; i < mybatch; i++) {
+        printf("categories: %d, %d\n", i, categories[i] + 1);
+    }
+
     clock_t end_start = clock();
     auto gemm_time = double(spmm_times);
     auto all_time = double(end_start - total_start)  / CLOCKS_PER_SEC;

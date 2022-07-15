@@ -23,9 +23,9 @@ def read_input(fname):
     row = cp.array(ijv[0].values)
     col = cp.array(ijv[1].values)
 
-    A = sparse.csr_matrix((data, (row, col)), shape=(60000, neuron), dtype=cp.float32)
+    A = sparse.csr_matrix((data, (col, row)), shape=(neuron, 60000), dtype=cp.float32)
     
-    return A.T.todense(order='f')
+    return A.todense(order='f')
 
 def read_weight(fname):
     ijv = pd.read_csv(fname, sep='\t', header=None)
@@ -37,5 +37,5 @@ def read_weight(fname):
     row = cp.array(ijv[0].values)
     col = cp.array(ijv[1].values)
 
-    A = sparse.csr_matrix((data, (row, col)), dtype='float32')
-    return A.T
+    A = sparse.csr_matrix((data, (col, row)), dtype='float32')
+    return A

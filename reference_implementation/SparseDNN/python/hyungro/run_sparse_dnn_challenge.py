@@ -6,7 +6,7 @@ import numpy as np
 import time
 
 base_path = '/qfs/projects/pacer/graphchallenge2022/'
-base_path = '/lus/grand/projects/GRACE/spdnn/'
+#base_path = '/lus/grand/projects/GRACE/spdnn/'
 
 inputFile = './MNIST/sparse-images-'
 categoryFile = './DNN/neuron'
@@ -69,7 +69,6 @@ for i in range(len(Nneuron)):
     else:
         categoryDiff = sparse.csr_matrix((cp.ones_like(trueCategories), (trueCategories, cp.zeros_like(trueCategories))), shape=(NfeatureVectors, 1), dtype='float32') - \
                 sparse.csr_matrix((cp.ones_like(categories), (categories, cp.zeros_like(categories))), shape=(NfeatureVectors, 1), dtype='float32')
-        pc_sparse = sparse.csr_matrix((cp.ones_like(categories), (categories, cp.zeros_like(categories))), shape=(NfeatureVectors, 1), dtype='float32')
         if (categoryDiff.count_nonzero()):
             print ('Challenge FAILED')
             print(categoryDiff.count_nonzero())
