@@ -2,6 +2,8 @@
 
 module purge
 module load python/miniconda3.9
+module load gcc/9.1.0
+module load openmpi/4.1.0
 source /share/apps/python/miniconda3.9/etc/profile.d/conda.sh
 
 export TEMP=/qfs/projects/pacer/milan/scratch/temp/
@@ -35,6 +37,8 @@ if [ ${7} == 1 ]; then
     nsys profile --kill=none -t cuda,osrt,cudnn,cublas -o ../../../logs/GraphChallenge/nsys/qdrep_report_p${1}_ng${2}_nc${3}_vng${4}_n${5}_nl${6} -w true --force-overwrite=true python -u ${PWD}/SparseDNN/python/${4}/runSparseDNNchallenge.py --neurons ${5} --num_layers ${6}
 elif [ ${7} == 0 ]; then
     python -u ${PWD}/SparseDNN/python/${4}/runSparseDNNchallenge.py --neurons ${5} --num_layers ${6}
+elif [ ${7} == 2 ]; then
+    horovodrun -np ${2} python -u ${PWD}/SparseDNN/python/${4}/runSparseDNNchallenge.py --neurons ${5} --num_layers ${6}
 fi
 # 
 
