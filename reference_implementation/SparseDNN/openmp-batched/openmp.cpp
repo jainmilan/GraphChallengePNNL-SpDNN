@@ -44,6 +44,7 @@ INDPREC *numbatch;
 INDPREC *batchdispl;
 
 INDPREC *categories;
+INDPREC *mycategories;
 
 FEATPREC ReLU(FEATPREC x){
     return x<0.0?0.0:x>32.0?32.0:x;
@@ -132,7 +133,7 @@ double kernel_spmm(INDPREC l, INDPREC dev, INDPREC* pbatch, INDPREC offset) {
             for(INDPREC j = 0; j < neuron; j++) {
                 nextfeat[feature * neuron + j] = nextfeat[i * neuron + j];
             }
-            categories[feature+offset] = categories[i];
+            mycategories[feature] = mycategories[i];
             feature++;
         }
     }
@@ -237,7 +238,11 @@ int main(int argc, char* argv[]) {
       nextfeat = nextfeat + offset*neuron;
       currfeat = currfeat + offset*neuron;
       active = active + offset;
-      categories = categories + offset;
+        
+      mycategories = new INDPREC[pbatch];
+      for(INDPREC n = 0; n < pbatch; n++) {
+        mycategories[n] = offset + n;
+      }
 
       setup_gpu_batch(k, pbatch);       
 
@@ -251,6 +256,10 @@ int main(int argc, char* argv[]) {
       }
 
       final_gpu_batch(k, pbatch);
+
+      for (INDPREC n = 0; n < pbatch; n++) {
+        categories[offset+n] = mycategories[n];
+      }
     }
     clock_t end_start = clock();
     auto gemm_time = double(spmm_times);
