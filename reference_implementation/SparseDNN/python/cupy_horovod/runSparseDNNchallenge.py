@@ -56,7 +56,8 @@ if rank == 0:
 
 # neuralNetBias = [-0.3,-0.35,-0.4,-0.45];
 neuralNetBias=neuralNetBias_val
-
+NfeatureVectors = 60000
+    
 # Loop over each DNN.
 if rank == 0:
     # Load sparse MNIST data.
@@ -65,13 +66,13 @@ if rank == 0:
         print("[INFO] Reading file: %s" %(filename))
     featureVectors = readTriples(
         filename, 
-        n_rows=60000,
+        n_rows=NfeatureVectors,
         n_features=Nneuron, 
         subtract=subtract_val
     )
 
-NfeatureVectors = 60000
-    
+# Read layers.
+# Read in true categories.
 filename = f"{categoryFile}{Nneuron}-l{maxLayers}-categories.tsv"
 trueCategories = cp.genfromtxt(filename)
 # FIXING THE INDEXING: True Categories are +1
@@ -120,19 +121,23 @@ else:
 
 tic = time.perf_counter();
 with cp.cuda.Device(rank):
-    scores_batched = inferenceReLUvec(layers, bias, featureData)
+    scores_batched, spgemmTime = inferenceReLUvec(layers, bias, featureData)
 
 challengeRunTime = time.perf_counter() - tic;
 
-challengeRunRate = NfeatureVectors * DNNedges / challengeRunTime;
-
 # Compute categories from scores.
-print(challengeRunTime)
+# print(challengeRunTime)
 # print(challengeRunRate)
+spgemm_times = comm.reduce(spgemmTime, op=MPI.SUM, root=0)
 run_times = comm.reduce(challengeRunTime, op=MPI.SUM, root=0)
-run_rates = comm.reduce(challengeRunRate, op=MPI.SUM, root=0)
+
+# run_rates = comm.reduce(challengeRunRate, op=MPI.SUM, root=0)
 if rank == 0:
-    print('[INFO] Run time (sec): %f, run rate (edges/sec): %f' %(run_times/size, run_rates/size));
+    spgemm_time = spgemm_times / size
+    spgemm_rate = NfeatureVectors * DNNedges / spgemm_time
+    iteration_time = run_times / size
+    iteration_rate = NfeatureVectors * DNNedges / run_times;
+    print('[INFO] SpGEMM time (sec): %f, SpGEMM Run rate (edges/sec): %f, Iteration time (sec): %f, Iteration Run rate (edges/sec): %f' %(spgemm_times, spgemm_rate, iteration_time, iteration_rate));
 
 scores_batched = comm.gather(scores_batched, root=0)
 if rank==0:

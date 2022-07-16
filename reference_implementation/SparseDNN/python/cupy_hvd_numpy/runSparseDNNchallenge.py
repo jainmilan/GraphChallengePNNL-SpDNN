@@ -2,11 +2,19 @@ import time, sys
 import scipy, numpy
 import argparse
 import cupy as cp
+import numpy as np
 from cupy.sparse import csr_matrix
+
+from mpi4py import MPI
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
 
 from readTriples import readTriples
 from inferenceReLUvec import inferenceReLUvec
-print("======Versions=======\n Python: %s\n CuPy: %s\n scipy: %s\n numpy: %s" %(sys.version, cp.__version__, scipy.__version__, numpy.__version__))
+if rank == 0: 
+    print("======Versions=======\n Python: %s\n CuPy: %s\n scipy: %s\n numpy: %s" %(sys.version, cp.__version__, scipy.__version__, numpy.__version__))
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--neurons', default=1024, choices=[1024, 4096, 16384, 65536], help="Number of neurons for training [options: 1024, 4096, 16384, 65536], defaults to 1024.", type=int)
@@ -43,24 +51,27 @@ elif args.neurons == 16384:
 elif args.neurons == 65536:
     neuralNetBias_val = -0.45
     # subtract_val = False
-print("[INFO] Neural Net Bias: %f" %(neuralNetBias_val))
+if rank == 0:
+    print("[INFO] Neural Net Bias: %f" %(neuralNetBias_val))
 
 # neuralNetBias = [-0.3,-0.35,-0.4,-0.45];
 neuralNetBias=neuralNetBias_val
-NfeatureVectors = 60000
 
+# Loop over each DNN.
+# if rank == 0:
 # Load sparse MNIST data.
 filename = f"{inputFile}{Nneuron}.tsv"
-print("[INFO] Reading file: %s" %(filename))
+if rank == 0:
+    print("[INFO] Reading file: %s" %(filename))
 featureVectors = readTriples(
     filename, 
-    n_rows=NfeatureVectors,
+    n_rows=60000,
     n_features=Nneuron, 
     subtract=subtract_val
 )
 
-# Read layers.
-# Read in true categories.
+NfeatureVectors = 60000
+    
 filename = f"{categoryFile}{Nneuron}-l{maxLayers}-categories.tsv"
 trueCategories = cp.genfromtxt(filename)
 # FIXING THE INDEXING: True Categories are +1
@@ -70,6 +81,8 @@ DNNedges = 0;
 layers = [];
 bias = [];
 tic = time.perf_counter();
+
+# read layers
 for k in range(maxLayers):
     filename = f"{layerFile}{Nneuron}/n{Nneuron}-l{k+1}.tsv"
     layers.append(readTriples(
@@ -79,37 +92,59 @@ for k in range(maxLayers):
     ));
 
     DNNedges = DNNedges + layers[k].count_nonzero();
-    bias = neuralNetBias
+
+# bias value
+bias = neuralNetBias
 
 readLayerTime = time.perf_counter() - tic
 readLayerRate = DNNedges/readLayerTime;
 
-print('[INFO] DNN neurons/layer: %d, layers: %d, edges: %d' %(Nneuron, maxLayers, DNNedges))
-print('[INFO] Read time (sec): %f, read rate (edges/sec): %f' %(readLayerTime, readLayerRate));
+if rank == 0:
+    print('[INFO] DNN neurons/layer: %d, layers: %d, edges: %d' %(Nneuron, maxLayers, DNNedges))
+    print('[INFO] Read time (sec): %f, read rate (edges/sec): %f' %(readLayerTime, readLayerRate));
 
 # Perform and time challenge
+split_number = 60000//size
+start = rank * split_number
+end = start + split_number
+print("[INFO] Processing Batch: [%d, %d]" %(start, end))
+
+layersData = [cp.sparse.csr_matrix(l, dtype=cp.float32) for l in layers]
+featureData = cp.sparse.csr_matrix(featureVectors[start:end], dtype=cp.float32)
+
 tic = time.perf_counter();
-scores, spgemmTime = inferenceReLUvec(layers, bias, featureVectors);  
+with cp.cuda.Device(rank):
+    scores_batched, spgemmTime = inferenceReLUvec(layersData, bias, featureData)
+
 challengeRunTime = time.perf_counter() - tic;
-spgemmRunRate = NfeatureVectors * DNNedges / spgemmTime;
+
 challengeRunRate = NfeatureVectors * DNNedges / challengeRunTime;
 
-print('[INFO] SpGEMM time (sec): %f, SpGEMM Run rate (edges/sec): %f, Iteration time (sec): %f, Iteration Run rate (edges/sec): %f' %(spgemmTime, spgemmRunRate, challengeRunTime, challengeRunRate));
-
 # Compute categories from scores.
-scores_sum = scores.sum(axis=1)
-categories, col = scores_sum.nonzero()
-val = scores_sum
+# print(challengeRunTime)
+# print(challengeRunRate)
+spgemm_times = comm.reduce(spgemmTime, op=MPI.SUM, root=0)
+run_times = comm.reduce(challengeRunTime, op=MPI.SUM, root=0)
+run_rates = comm.reduce(challengeRunRate, op=MPI.SUM, root=0)
+if rank == 0:
+    print('[INFO] SpGEMM time (sec): %f, Run time (sec): %f, run rate (edges/sec): %f' %(spgemm_times/size, run_times/size, run_rates/size));
 
-if SAVECAT:
-    pass
-else:
-    tc_sparse = csr_matrix((cp.ones_like(trueCategories), (trueCategories, cp.zeros_like(trueCategories))), shape=(NfeatureVectors, 1), dtype='float32')
-    pc_sparse = csr_matrix((cp.ones_like(categories), (categories, cp.zeros_like(categories))), shape=(NfeatureVectors, 1), dtype='float32')
-    categoryDiff = tc_sparse - pc_sparse
-    print("[INFO] Non-zero category difference: %d" %(categoryDiff.count_nonzero()))
-    if (categoryDiff.count_nonzero()):
-        print('[INFO] Challenge FAILED');
+scores_batched = comm.gather(scores_batched, root=0)
+if rank==0:
+    scores = cp.sparse.vstack(scores_batched)
+    scores_sum = scores.sum(axis=1)
+    categories, col = scores_sum.nonzero()
+    val = scores_sum
+    
+    if SAVECAT:
+        pass
     else:
-        print('[INFO] Challenge PASSED');    
+        tc_sparse = csr_matrix((cp.ones_like(trueCategories), (trueCategories, cp.zeros_like(trueCategories))), shape=(NfeatureVectors, 1), dtype='float32')
+        pc_sparse = csr_matrix((cp.ones_like(categories), (categories, cp.zeros_like(categories))), shape=(NfeatureVectors, 1), dtype='float32')
+        categoryDiff = tc_sparse - pc_sparse
+        print("[INFO] Non-zero category difference: %d" %(categoryDiff.count_nonzero()))
+        if (categoryDiff.count_nonzero()):
+            print('[INFO] Challenge FAILED');
+        else:
+            print('[INFO] Challenge PASSED');    
 

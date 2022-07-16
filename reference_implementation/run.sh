@@ -39,6 +39,8 @@ elif [ ${7} == 0 ]; then
     python -u ${PWD}/SparseDNN/python/${4}/runSparseDNNchallenge.py --neurons ${5} --num_layers ${6}
 elif [ ${7} == 2 ]; then
     horovodrun -np ${2} python -u ${PWD}/SparseDNN/python/${4}/runSparseDNNchallenge.py --neurons ${5} --num_layers ${6}
+elif [ ${7} == 3 ]; then
+    nsys profile --kill=none -t cuda,osrt,cudnn,cublas -o ../../../logs/GraphChallenge/nsys/qdrep_report_p${1}_ng${2}_nc${3}_vng${4}_n${5}_nl${6} -w true --force-overwrite=true horovodrun -np ${2} python -u ${PWD}/SparseDNN/python/${4}/runSparseDNNchallenge.py --neurons ${5} --num_layers ${6}
 fi
 # 
 

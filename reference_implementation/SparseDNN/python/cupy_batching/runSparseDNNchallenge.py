@@ -1,12 +1,8 @@
-import os
-import asyncio
 import time, sys
 import scipy, numpy
 import argparse
-# import multiprocessing
-# from functools import partial
-import ray
 import cupy as cp
+import numpy as np
 from cupy.sparse import csr_matrix
 
 from readTriples import readTriples
@@ -30,14 +26,14 @@ layerFile = basePath + 'DNN/neuron';
 
 # Select DNN to run.
 #Nneuron = [1024, 4096, 16384, 65536];
-Nneuron = args.neurons;
+Nneuron = args.neurons
 SAVECAT = False    # Overwrite truth categories.
 READTSV = True    # Read input and layers from .tsv files.
 READMAT = True    # Redd input and layers from .mat files.
 
 # Select number of layers to run.
 #maxLayers = 120 * [1, 4, 16];
-maxLayers = args.num_layers;
+maxLayers = args.num_layers
 
 # Set DNN bias.
 neuralNetBias_val = -0.3
@@ -67,28 +63,29 @@ featureVectors = readTriples(
 
 # Read layers.
 # Read in true categories.
-if not SAVECAT:
-    filename = f"{categoryFile}{Nneuron}-l{maxLayers}-categories.tsv"
-    trueCategories = cp.genfromtxt(filename)
-    # FIXING THE INDEXING: True Categories are +1
-    trueCategories = trueCategories - 1
+filename = f"{categoryFile}{Nneuron}-l{maxLayers}-categories.tsv"
+trueCategories = cp.genfromtxt(filename)
+# FIXING THE INDEXING: True Categories are +1
+trueCategories = trueCategories - 1
     
 DNNedges = 0;
 layers = [];
 bias = [];
 tic = time.perf_counter();
+
+# read layers
 for k in range(maxLayers):
-    if READTSV:
-        filename = f"{layerFile}{Nneuron}/n{Nneuron}-l{k+1}.tsv"
-        layers.append(readTriples(
-            filename, 
-            n_rows=Nneuron,
-            n_features=Nneuron
-        ));
-    if READMAT:
-        pass
+    filename = f"{layerFile}{Nneuron}/n{Nneuron}-l{k+1}.tsv"
+    layers.append(readTriples(
+        filename, 
+        n_rows=Nneuron,
+        n_features=Nneuron
+    ));
+    
     DNNedges = DNNedges + layers[k].count_nonzero();
-    bias = neuralNetBias
+
+# bias value
+bias = neuralNetBias
 
 readLayerTime = time.perf_counter() - tic
 readLayerRate = DNNedges/readLayerTime;
@@ -113,6 +110,8 @@ print('[INFO] Run time (sec): %f, run rate (edges/sec): %f' %(challengeRunTime, 
 # Compute categories from scores.
 scores = cp.sparse.vstack(scores_batched)
 scores_sum = scores.sum(axis=1)
+# import numpy as np
+# np.savetxt("sample_output.txt", scores_sum.get())
 categories, col = scores_sum.nonzero()
 val = scores_sum
 
