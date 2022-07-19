@@ -19,11 +19,12 @@ def read_input(fname):
     elif ijv.shape[0] == 392191985:
         neuron = 65536
 
-    data = cp.array(ijv[2].values)
-    row = cp.array(ijv[0].values)
-    col = cp.array(ijv[1].values)
+    data = np.array(ijv[2].values)
+    row = np.array(ijv[0].values)
+    col = np.array(ijv[1].values)
 
-    A = sparse.csr_matrix((data, (col, row)), shape=(neuron, 60000), dtype=cp.float32)
+    A = scipy.sparse.csr_matrix((data, (col, row)), shape=(neuron, 60000),
+            dtype='float32')
     
     return A.todense(order='f')
 
@@ -33,9 +34,9 @@ def read_weight(fname):
     ijv[0] -= 1
     ijv[1] -= 1
 
-    data = cp.array(ijv[2].values)
-    row = cp.array(ijv[0].values)
-    col = cp.array(ijv[1].values)
+    data = np.array(ijv[2].values)
+    row = np.array(ijv[0].values)
+    col = np.array(ijv[1].values)
 
-    A = sparse.csr_matrix((data, (col, row)), dtype='float32')
+    A = scipy.sparse.csr_matrix((data, (col, row)), dtype='float32')
     return A
