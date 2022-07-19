@@ -1,21 +1,24 @@
 import os
+import sys
 import re
 import glob
+import numpy as np
 import pandas as pd
 
-basePath = "/qfs/projects/pacer/milan/logs/GraphChallenge/sbatch/"
+basePath = "/qfs/projects/pacer/milan/logs/GraphChallenge/nsys/"
 resultsPath = "/qfs/projects/pacer/milan/logs/GraphChallenge/results/"
 if not os.path.exists(resultsPath):
     os.makedirs(resultsPath)
 
-# machine = "a100_80" 
-machine = "a100"
+machine = "a100_80" 
+# machine = "a100"
 version = "cupy_horovod"
 
-files = glob.glob(basePath + "*.txt")
+files = glob.glob(basePath + "*gpumemtimesum.csv")
 files.sort()
 
-sel_files = [f for f in files if re.match(".*out_p" + machine + "_ng.*" + version + "_.*", f)]
+# sys.exit(files)
+sel_files = files #[f for f in files if re.match(".*out_p" + machine + "_ng.*" + version + "_.*", f)]
 print("[INFO] Number of files matching the pattern: %d" %(len(sel_files)))
 
 # filepath = sel_files[0]
@@ -37,21 +40,31 @@ for filepath in sel_files:
     try:
         with open(filepath, 'r') as fp:
             filetext = fp.read()
-            # print(filetext)
-            match = re.findall(r"^\[.*SpGEMM.*$", filetext, re.M)[0]
-            results = match.split(',')
-            nums = [float(r.split(':')[-1].strip()) for r in results[1:]]
-            row["spgemmTime"] = nums[0]
-            row["spgemmRate"] = nums[1]
-            row["iterationTime"] = nums[2]
-            row["iterationRate"] = nums[3]
-
-        dict_list.append(row)
-    except:
+            match = re.findall(r"^\d.*(?:CUDA memcpy DtoH|CUDA memcpy HtoD)\]", filetext, re.M)
+            # sys.exit(match)
+            row["cuda_time"] = float(match[0].split(',')[0]) + float(match[1].split(',')[0])
+    except Exception as e:
+        print(e)
         print("Couldn't process file: %s" %(filename))
+
+    kern_file = filepath.replace("gpumemtimesum", "gpukernsum")
+    # sys.exit(kern_file)
+    try:
+        with open(kern_file, 'r') as fp:
+            filetext = fp.read()
+            match = re.findall(r".*csrgemm2.*", filetext, re.M)
+            row["csrgemm_time"] = np.sum([float(m.split(',')[0]) for m in match])
+            # sys.exit(match)
+            # row["cuda_time"] = float(match[0].split(',')[0]) + float(match[1].split(',')[0])
+    except Exception as e:
+        print(e)
+        print("Couldn't process file: %s" %(filename))
+
+    dict_list.append(row)
 
 # print(row)
 df_results = pd.DataFrame(dict_list)
+print(df_results.pivot(index=["n_neurons"], columns=["n_gpus"], values=["cuda_time", "csrgemm_time"]).to_latex())
 df_results.to_csv(f"{resultsPath}{machine}_{version}.csv")
 print(df_results)
 print(df_results.shape)

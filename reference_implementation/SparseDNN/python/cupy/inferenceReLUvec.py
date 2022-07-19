@@ -2,8 +2,10 @@ import time
 import numpy as np
 import cupy as cp
 
+# from scalene import scalene_profiler
 @profile
 def inferenceReLUvec(W, bias, Y0):
+    # scalene_profiler.start()
     # Performs ReLU inference  using input feature vector(s) Y0,
     # DNN weights W, and constant bias.
     YMAX = 32 # set max value
@@ -33,5 +35,6 @@ def inferenceReLUvec(W, bias, Y0):
         Y.eliminate_zeros()
 
     challengeRunTime = np.sum(spgemmTimes)
+    # scalene_profiler.stop()
     
     return Y, challengeRunTime

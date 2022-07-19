@@ -32,6 +32,7 @@ def inferenceReLUvec(W, bias, Y0):
         # eliminate zero entries
         Y.eliminate_zeros()
 
+    # print("List of times: %d, %d, %", spgemmTimes)
     challengeRunTime = np.sum(spgemmTimes)
     
     return Y, challengeRunTime

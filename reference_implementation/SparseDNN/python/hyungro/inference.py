@@ -1,6 +1,7 @@
 import numpy as np
 import cupy as cp
 
+@profile
 def inferenceReLUvec(W, Y0):
     
     YMAX = 32 # set max value

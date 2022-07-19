@@ -12,7 +12,7 @@ inputFile = './MNIST/sparse-images-'
 categoryFile = './DNN/neuron'
 layerFile = './DNN/neuron'
 
-Nneuron = [1024 * 1] # [1024, 4096, 16384, 65536]
+Nneuron = [16384 * 1] # [1024, 4096, 16384, 65536]
 SAVECAT = 0
 READTSV = 1
 READMAT = 0

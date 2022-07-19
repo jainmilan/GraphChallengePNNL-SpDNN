@@ -110,6 +110,8 @@ start = rank * split_number
 end = start + split_number
 print("[INFO] Processing Batch: [%d, %d]" %(start, end))
 
+# featureData = featureVectors[start:end]
+
 if rank == 0:
     featureData = featureVectors[start:end]
     for device_num in range(1, size):
@@ -119,14 +121,17 @@ if rank == 0:
 else:
     featureData = comm.recv(source=0)
 
+# comm.barrier()
+
 tic = time.perf_counter();
 with cp.cuda.Device(rank):
     scores_batched, spgemmTime = inferenceReLUvec(layers, bias, featureData)
-
 challengeRunTime = time.perf_counter() - tic;
 
 # Compute categories from scores.
-# print(challengeRunTime)
+print("Challenge Time: %f" %(challengeRunTime))
+print("SpGEMM Time: %f" %(spgemmTime))
+
 # print(challengeRunRate)
 spgemm_times = comm.reduce(spgemmTime, op=MPI.SUM, root=0)
 run_times = comm.reduce(challengeRunTime, op=MPI.SUM, root=0)
@@ -137,7 +142,7 @@ if rank == 0:
     spgemm_rate = NfeatureVectors * DNNedges / spgemm_time
     iteration_time = run_times / size
     iteration_rate = NfeatureVectors * DNNedges / run_times;
-    print('[INFO] SpGEMM time (sec): %f, SpGEMM Run rate (edges/sec): %f, Iteration time (sec): %f, Iteration Run rate (edges/sec): %f' %(spgemm_times, spgemm_rate, iteration_time, iteration_rate));
+    print('[INFO] SpGEMM time (sec): %f, SpGEMM Run rate (edges/sec): %f, Iteration time (sec): %f, Iteration Run rate (edges/sec): %f' %(spgemm_time, spgemm_rate, iteration_time, iteration_rate));
 
 scores_batched = comm.gather(scores_batched, root=0)
 if rank==0:
