@@ -30,7 +30,7 @@ FEATPREC *currfeat;
 FEATPREC *nextfeat; 
 
 INDPREC *active;   
-INDPREC pbatch=0;
+INDPREC pbatch;
 
 double timeio;
 double timetot;
@@ -44,7 +44,9 @@ INDPREC *batchdispl;
 
 INDPREC *categories;
 INDPREC *mycategories;
+
 INDPREC saved=0;
+INDPREC offset=0;
 
 FEATPREC ReLU(FEATPREC x){
     return x<0.0?0.0:x>32.0?32.0:x;
@@ -61,22 +63,6 @@ void setup_gpu() {
     }
 }
 
-void setup_feature(INDPREC offset) {
-#if defined(USE_OMP_HOST)
-#else
-#pragma omp target enter data map(alloc:currfeat[offset*neuron:pbatch*neuron])
-#pragma omp target enter data map(alloc:nextfeat[offset*neuron:pbatch*neuron])
-#endif
-}
-
-void final_feature(INDPREC offset) {
-#if defined(USE_OMP_HOST)
-#else
-#pragma omp target exit data map(delete:currfeat[offset*neuron:pbatch*neuron])
-#pragma omp target exit data map(delete:nextfeat[offset*neuron:pbatch*neuron])
-#endif
-}
-
 void final_gpu() {
     for(INDPREC l = 0; l < layer; l++){
 #if defined(USE_OMP_HOST)
@@ -88,14 +74,14 @@ void final_gpu() {
     }
 }
 
-double kernel_spmm(INDPREC l, INDPREC offset) {
-  
-  std::memset(active, 0, sizeof(INDPREC)*pbatch);
-  std::memset(nextfeat, 0, sizeof(FEATPREC)*pbatch);
+double kernel_spmm(INDPREC l) {
+
+   std::memset(active, 0, sizeof(INDPREC)*pbatch);
+   std::memset(nextfeat, 0, sizeof(FEATPREC)*pbatch*neuron);
 
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target update to (currfeat[offset*neuron:pbatch*neuron], nextfeat[offset*neuron:pbatch*neuron])
+#pragma omp target update to (currfeat[:pbatch*neuron], nextfeat[:pbatch*neuron])
 #endif
 
    double t0 = omp_get_wtime();
@@ -105,7 +91,7 @@ double kernel_spmm(INDPREC l, INDPREC offset) {
 #else
 #pragma omp target teams loop \
    collapse(2) \
-   map(to: currfeat[offset*neuron:pbatch*neuron], nextfeat[offset*neuron:pbatch*neuron]) \
+   map(to: currfeat[:pbatch*neuron], nextfeat[:pbatch*neuron]) \
    map(to: csrdispl[l][0:neuron+1], csrindex[l][0:csrdispl[l][neuron]], csrvalue[l][0:csrdispl[l][neuron]])
 #endif
    for (INDPREC i = 0; i < neuron; i++) {
@@ -122,8 +108,8 @@ double kernel_spmm(INDPREC l, INDPREC offset) {
 
 #if defined(USE_OMP_HOST)
 #else
-#pragma omp target update from (nextfeat[offset*neuron:pbatch*neuron])
-#endif                                       
+#pragma omp target update from (nextfeat[:pbatch*neuron])
+#endif  
 
    for(INDPREC i = 0; i < pbatch; i++) {
      for(INDPREC j = 0; j < neuron; j++) {
@@ -140,6 +126,7 @@ double kernel_spmm(INDPREC l, INDPREC offset) {
        }
        mycategories[feature] = mycategories[i];
        feature++;
+       std::cout << "Test" << std::endl;
      }
    }
 
@@ -219,38 +206,51 @@ int main(int argc, char* argv[]) {
     clock_t total_start = clock();
 
     pbatch = batch/nparts;
-    for(size_t offset = 0, b = 0; offset < batch; offset += pbatch, b++) {
-                
-        mycategories = new INDPREC[pbatch];
-        for(INDPREC k = 0; k < pbatch; k++) {
-            mycategories[k] = k + offset;
-        }
+    setup_gpu();
+    
+    for(offset = 0; offset < batch; offset += pbatch) {     
+      
+      mycategories = new INDPREC[pbatch];
+      for(INDPREC k = 0; k < pbatch; k++) {
+        mycategories[k] = k + offset;
+      }
 
-        currfeat = currfeat+(offset*neuron);
-        setup_gpu();
+      currfeat = currfeat+(offset*neuron);
 
-        printf("INFERENCE......\n");
-        printf("for %d layers of batch size %d......\n", layer, pbatch);
-        for(int i = 0; i < layer; ++i) {
-            setup_feature(offset);
-            printf("[%d]", i);
-            fflush(stdout);
-            auto t = kernel_spmm(i, offset);
-            spmm_times += double(t);
-            printf(":(%lf)\n", t);
-            fflush(stdout);
-            final_feature(offset);
-        }
+#if defined(USE_OMP_HOST)
+#else
+#pragma omp target enter data map(alloc:currfeat[:pbatch*neuron])
+#pragma omp target enter data map(alloc:nextfeat[:pbatch*neuron])
+#endif
 
-        final_gpu();
+      printf("INFERENCE......\n");
+      printf("for %d layers of batch size %d......\n", layer, pbatch);
+      for(int i = 0; i < layer; ++i) {
+        printf("[%d]", i);
+        fflush(stdout);
+        auto t = kernel_spmm(i);
+        spmm_times += double(t);
+        printf(":(%lf)\n", t);
+        fflush(stdout);
+      }
 
-        for (INDPREC k = 0; k < pbatch; k++) {
-            categories[saved+k] = mycategories[k];
-        }
-        saved += pbatch;
-        pbatch = batch/nparts;
+#if defined(USE_OMP_HOST)
+#else
+#pragma omp target exit data map(delete:currfeat[:pbatch*neuron])
+#pragma omp target exit data map(delete:nextfeat[:pbatch*neuron])
+#endif
+
+      for (INDPREC k = 0; k < pbatch; k++) {
+        categories[saved+k] = mycategories[k];
+      }
+
+      saved += pbatch;
+      pbatch = batch/nparts;
     }
+    
+    final_gpu();
     pbatch = saved;
+
     clock_t end_start = clock();
     auto gemm_time = double(spmm_times);
     auto all_time = double(end_start - total_start)  / CLOCKS_PER_SEC;
@@ -264,6 +264,7 @@ int main(int argc, char* argv[]) {
     std::string outfilename = outFilePath + "/" + slayer + "-" + sneuron + "-" + sbatch + "-" + snparts + "parts-results.txt";
 
     std::cout << "Storing output results in: " << outfilename << std::endl;
+    std::cout << "Saved features: " << saved << std::endl;
     std::ofstream ofile(outfilename);
     if (ofile.is_open())
     {
