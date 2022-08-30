@@ -139,7 +139,7 @@ double kernel_spmm(INDPREC l) {
        feature++;
      }
    }
-   
+
    pbatch = feature;
    FEATPREC *tempfeat = currfeat_ptr;
    currfeat_ptr = nextfeat_ptr;
@@ -244,7 +244,7 @@ int main(int argc, char* argv[]) {
       }
 
       saved += pbatch;
-      pbatch = batch/nparts;
+      pbatch = batch / nparts;
       final_gpu();
     }
     
