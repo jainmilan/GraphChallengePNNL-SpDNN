@@ -9,10 +9,11 @@ def inferenceReLUvec(W, bias, Y0):
     YMAX = 32 # set max value
 
     # Initialized feature vectors.
-    Y = Y0
+    Y = cp.array(Y0, dtype=cp.float32, order='f')
 
-    # spgemm time list
-    spgemmTimes = []
+
+    # spmm time list
+    spmmTimes = []
 
     # loop through each weight layer W[i]
     for i in range(len(W)):
@@ -28,19 +29,22 @@ def inferenceReLUvec(W, bias, Y0):
         # print(Y.shape, W[i].shape)
         # load weight matrix to GPU
         W_sel = cp.sparse.csr_matrix(W[i], dtype=cp.float32)
+        # print(W_sel.shape, Y.shape)
 
         tic = time.perf_counter();
-        Y = cp.cusparse.csrgemm2(Y, W_sel)
-        spgemmTime = time.perf_counter() - tic;
-        spgemmTimes.append(spgemmTime)
+        Y = cp.cusparse.spmm(a=W_sel, b=Y)
+        spmmTime = time.perf_counter() - tic;
+        spmmTimes.append(spmmTime)
+        # print(Y.shape)
 
         # Apply bias to non-zero entries.
-        Y.data = cp.where(Y.data < -bias,  0, cp.where(Y.data > YMAX - bias, YMAX, Y.data + bias))
+        Y = cp.where(Y < -bias,  0, cp.where(Y > YMAX - bias, YMAX, Y + bias))
         
         # eliminate zero entries
-        Y.eliminate_zeros()
+        # Y.eliminate_zeros()
+        Y = cp.array(Y, order='f')
 
-    challengeRunTime = np.sum(spgemmTimes)
+    challengeRunTime = np.sum(spmmTimes)
     # print('[INFO] Run time (sec): %f' %(challengeRunTime));
 
     return Y, challengeRunTime

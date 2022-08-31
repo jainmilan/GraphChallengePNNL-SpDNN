@@ -1,9 +1,11 @@
 import time, sys
-import scipy, numpy
+import scipy
 import argparse
 import cupy as cp
 import numpy as np
+import pandas as pd
 from cupy.sparse import csr_matrix
+from scipy.sparse import csr_matrix as scipy_csr_matrix
 
 from mpi4py import MPI
 
@@ -14,7 +16,7 @@ size = comm.Get_size()
 from readTriples import readTriples
 from inferenceReLUvec import inferenceReLUvec
 if rank == 0: 
-    print("======Versions=======\n Python: %s\n CuPy: %s\n scipy: %s\n numpy: %s" %(sys.version, cp.__version__, scipy.__version__, numpy.__version__))
+    print("======Versions=======\n Python: %s\n CuPy: %s\n scipy: %s\n numpy: %s\n pandas: %s" %(sys.version, cp.__version__, scipy.__version__, np.__version__, pd.__version__))
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--neurons', default=1024, choices=[1024, 4096, 16384, 65536], help="Number of neurons for training [options: 1024, 4096, 16384, 65536], defaults to 1024.", type=int)
@@ -57,23 +59,24 @@ if rank == 0:
 # neuralNetBias = [-0.3,-0.35,-0.4,-0.45];
 neuralNetBias=neuralNetBias_val
 NfeatureVectors = 60000
-    
+
 # Loop over each DNN.
+# if rank == 0:
+# Load sparse MNIST data.
+filename = f"{inputFile}{Nneuron}.tsv"
 if rank == 0:
-    # Load sparse MNIST data.
-    filename = f"{inputFile}{Nneuron}.tsv"
     print("[INFO] Reading file: %s" %(filename))
-    featureVectors = readTriples(
-        filename, 
-        n_rows=NfeatureVectors,
-        n_features=Nneuron, 
-        subtract=subtract_val
-    )
+featureVectors = readTriples(
+    filename, 
+    n_rows=NfeatureVectors,
+    n_features=Nneuron, 
+    subtract=subtract_val
+)
 
 # Read layers.
 # Read in true categories.
 filename = f"{categoryFile}{Nneuron}-l{maxLayers}-categories.tsv"
-trueCategories = cp.genfromtxt(filename)
+trueCategories = np.genfromtxt(filename)
 # FIXING THE INDEXING: True Categories are +1
 trueCategories = trueCategories - 1
     
@@ -104,56 +107,58 @@ if rank == 0:
     print('[INFO] Read time (sec): %f, read rate (edges/sec): %f' %(readLayerTime, readLayerRate));
 
 # Perform and time challenge
-split_number = 60000//size
+split_number = NfeatureVectors // size
 start = rank * split_number
 end = start + split_number
 print("[INFO] Processing Batch: [%d, %d]" %(start, end))
 
-# featureData = featureVectors[start:end]
-
-if rank == 0:
-    featureData = featureVectors[start:end]
-    for device_num in range(1, size):
-        start_local = device_num * split_number
-        end_local = start_local + split_number
-        comm.send(featureVectors[start_local:end_local], dest=device_num)
-else:
-    featureData = comm.recv(source=0)
-
-# comm.barrier()
+# layersData = [csr_matrix(l, dtype=cp.float32) for l in layers]
+layersData = layers
 
 tic = time.perf_counter();
 with cp.cuda.Device(rank):
-    scores_batched, spgemmTime = inferenceReLUvec(layers, bias, featureData)
+    scores_batched, spmmTime = inferenceReLUvec(layersData, bias, featureVectors[:, start:end].todense(order='f'))
 challengeRunTime = time.perf_counter() - tic;
 
-# Compute categories from scores.
-print("Challenge Time: %f" %(challengeRunTime))
-print("SpGEMM Time: %f" %(spgemmTime))
+if rank == 0:
+    # Compute categories from scores.
+    print("Challenge Time: %f" %(challengeRunTime))
+    print("SpMM Time: %f" %(spmmTime))
 
+# challengeRunRate = NfeatureVectors * DNNedges / challengeRunTime;
+# Compute categories from scores.
+# print(challengeRunTime)
 # print(challengeRunRate)
-spgemm_times = comm.reduce(spgemmTime, op=MPI.SUM, root=0)
+spmm_times = comm.reduce(spmmTime, op=MPI.SUM, root=0)
 run_times = comm.reduce(challengeRunTime, op=MPI.SUM, root=0)
 scores_batched = comm.gather(scores_batched, root=0)
+# run_rates = comm.reduce(challengeRunRate, op=MPI.SUM, root=0)
+# if rank == 0:
+#     print('[INFO] SpMM time (sec): %f, Run time (sec): %f, run rate (edges/sec): %f' %(spmm_times/size, run_times/size, run_rates/size));
 
 # run_rates = comm.reduce(challengeRunRate, op=MPI.SUM, root=0)
 if rank == 0:
-    spgemm_time = spgemm_times / size
-    spgemm_rate = NfeatureVectors * DNNedges / spgemm_time
+    spmm_time = spmm_times / size
+    spmm_rate = NfeatureVectors * DNNedges / spmm_time
     iteration_time = run_times / size
     iteration_rate = NfeatureVectors * DNNedges / run_times;
-    print('[INFO] SpGEMM time (sec): %f, SpGEMM Run rate (edges/sec): %f, Iteration time (sec): %f, Iteration Run rate (edges/sec): %f' %(spgemm_time, spgemm_rate, iteration_time, iteration_rate));
+    print('[INFO] SpMM time (sec): %f, SpMM Run rate (edges/sec): %f, Iteration time (sec): %f, Iteration Run rate (edges/sec): %f' %(spmm_time, spmm_rate, iteration_time, iteration_rate));
 
-    scores = cp.sparse.vstack(scores_batched)
-    scores_sum = scores.sum(axis=1)
-    categories, col = scores_sum.nonzero()
+    # print("Scored Batched", scores_batched, scores_batched[0].shape, scores_batched[1].shape)
+    scores = np.hstack(scores_batched)
+    # print("Scores", scores, scores.shape)
+    scores_sum = cp.asnumpy(scores.sum(axis=0))
+    # print("Scores Sum", scores_sum)
+    categories = scores_sum.nonzero()[0]
     val = scores_sum
     
     if SAVECAT:
         pass
     else:
-        tc_sparse = csr_matrix((cp.ones_like(trueCategories), (trueCategories, cp.zeros_like(trueCategories))), shape=(NfeatureVectors, 1), dtype='float32')
-        pc_sparse = csr_matrix((cp.ones_like(categories), (categories, cp.zeros_like(categories))), shape=(NfeatureVectors, 1), dtype='float32')
+        # print(trueCategories, categories)
+        # print(np.ones_like(trueCategories).shape, np.zeros_like(trueCategories).shape, np.ones_like(categories).shape, np.zeros_like(categories).shape)
+        tc_sparse = scipy_csr_matrix((np.ones_like(trueCategories), (np.array(trueCategories), np.zeros_like(trueCategories))), shape=(NfeatureVectors, 1), dtype='float32')
+        pc_sparse = scipy_csr_matrix((np.ones_like(categories), (np.array(categories), np.zeros_like(categories))), shape=(NfeatureVectors, 1), dtype='float32')
         categoryDiff = tc_sparse - pc_sparse
         print("[INFO] Non-zero category difference: %d" %(categoryDiff.count_nonzero()))
         if (categoryDiff.count_nonzero()):

@@ -26,6 +26,7 @@ def read_input(fname):
     A = scipy.sparse.csr_matrix((data, (col, row)), shape=(neuron, 60000),
             dtype='float32')
     
+    print(A.todense(order='f').shape)
     return A.todense(order='f')
 
 def read_weight(fname):
