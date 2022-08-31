@@ -101,32 +101,27 @@ double kernel_spmm(INDPREC l) {
   map(to: currfeat[0:crbatch*neuron], nextfeat[0:crbatch*neuron], active[0:crbatch]) \
   map(to: csrdispl[l][0:neuron+1], csrindex[l][0:csrdispl[l][neuron]], csrvalue[l][0:csrdispl[l][neuron]])
 #endif
-    for (INDPREC i = 0; i < neuron; i++) {
-      for (INDPREC j = 0; j < crbatch; j++) {
-        VALPREC result = 0;
-        for (INDPREC p = csrdispl[l][i]; p < csrdispl[l][i+1]; p++) {
-          const INDPREC k = csrindex[l][p];
-          result += csrvalue[l][p] * currfeat[j*neuron + k];
-        }
-        nextfeat[j*neuron + i] = result;
-      }
-    }
+   for (INDPREC i = 0; i < crbatch; i++) {
+     for (INDPREC j = 0; j < neuron; j++) {
+       VALPREC result = 0;
+       for (INDPREC p = csrdispl[l][j]; p < csrdispl[l][j+1]; p++) {
+         const INDPREC k = csrindex[l][p];
+         result += csrvalue[l][p] * currfeat[i * neuron + k];
+       }
+       nextfeat[i * neuron + j] = ReLU(result + bias);
+       if (nextfeat[i * neuron + j])
+         active[i] += 1;
+     }
+   }
    double t1 = omp_get_wtime();
 
 #if defined(USE_OMP_HOST)
 #else
 #pragma omp target update from(nextfeat[0:crbatch*neuron])
+#pragma omp target update from(active[0:crbatch])
 #endif                                       
-
-   for(INDPREC i = 0; i < crbatch; i++) {
-        active[i] = 0;
-       for(INDPREC j = 0; j < neuron; j++) {
-            if(nextfeat[i * neuron + j] =  ReLU(nextfeat[i * neuron + j] + bias))
-                active[i] += 1;
-        }
-    }
-
-    INDPREC feature = 0;
+    
+   INDPREC feature = 0;
     for(INDPREC i = 0; i < crbatch; i++) {
         if(active[i]) {
             for(INDPREC j = 0; j < neuron; j++) {
