@@ -36,7 +36,7 @@ The official data sets are linked from the Graph Challenge website: http://graph
 
 ### OpenMP
 
-TBD
+The OpenMP version uses a simple SpMM (Sparse Matrix [sparse] Matrix [dense] multiplication) kernel and OpenMP (4.5) offload model to port the kernel on a GPU, instead of using a third-party numerical library like the other variants. The bias computations are performed within the kernel itself.  
 
 ### C++
 
