@@ -36,7 +36,7 @@ The official data sets are linked from the Graph Challenge website: http://graph
 
 ### OpenMP
 
-The OpenMP version uses a simple SpMM (Sparse Matrix [sparse] Matrix [dense] multiplication) kernel and OpenMP (4.5) offload model to port the kernel on a GPU, instead of using a third-party numerical library like the other variants. The bias computations are performed within the kernel itself.  
+The OpenMP version uses a simple SpMM (Sparse Matrix [sparse] Matrix [dense] multiplication) kernel and OpenMP (4.5) offload model to port the kernel on a GPU, instead of using a third-party numerical library like the other variants. The bias computations are performed within the kernel itself. We observed that for NVHPC to work properly for the batched version, `-gpu=managed` option must be passed.
 
 ### C++
 
