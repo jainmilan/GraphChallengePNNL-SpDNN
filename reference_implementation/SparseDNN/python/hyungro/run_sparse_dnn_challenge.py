@@ -39,7 +39,7 @@ if args.batch_size:
 
 cp.cuda.Device(device).use()
 
-print ("[device:{}] {},{}".format( device, Nneuron, maxLayers))
+#print ("[device:{}] {},{}".format( device, Nneuron, maxLayers))
 for i in range(len(Nneuron)):
     if READTSV:
         featureVectors = read_input(f"{base_path}{inputFile}{Nneuron[i]}.tsv")

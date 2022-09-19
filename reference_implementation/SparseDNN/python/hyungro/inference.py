@@ -31,9 +31,7 @@ def inferenceReLUvec(W, Y0, spmm_time, batch_size=1):
             # % that requires *left* multiplication feature *row* vectors.
             w = cp.sparse.csr_matrix(W[i])
             s = time.time()
-            print(w.shape, Y.shape)
             Y = cp.cusparse.spmm(w, Y)
-            print(Y.shape)
             elapsed = time.time() - s
             spmm_time[0] += elapsed
 
