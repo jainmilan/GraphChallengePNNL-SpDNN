@@ -19,7 +19,9 @@ We use sub-directories for different programming models with variations e.g., cs
 
 ## Getting Data sets
 
-The official data sets are linked from the Graph Challenge website: http://graphchallenge.mit.edu/data-sets
+The official data sets are provided in text files (.tsv). For the purpose of fast reading the inputs (with a smaller file size in an aggregated single file), we converted them to binary formats across all graph images (from 1024 to 65536 neurons). 
+- The original datasets are also available on Amazon S3, which can be found in the links on the Graph Challenge website: http://graphchallenge.mit.edu/data-sets.
+- At PNNL sites, `/qfs/projects/pacer/graphchallenge2022/DNN` has copies of these text files (.tsv) and binary files (under `binaries/*.bin`)
 
 ## Requirement
 
