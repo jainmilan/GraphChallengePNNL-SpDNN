@@ -19,9 +19,13 @@ We use sub-directories for different programming models with variations e.g., cs
 
 ## Getting Data sets
 
-The official data sets are provided in text files (.tsv). For the purpose of fast reading the inputs (with a smaller file size in an aggregated single file), we converted them to binary formats across all graph images (from 1024 to 65536 neurons). 
+The official data sets are provided in text files (.tsv) for MNIST digit images. For the purpose of fast-reading the inputs (with a smaller file size in an aggregated single file), we converted them to binary formats across all graph images (from 1024 to 65536 neurons). 
+
+The conversion takes simple processes a) reading each line of files with a template (`row_index\tcolumn_index\t1`) which represent image pixel information in sparse data, b) iterating a) per neuron (weight) to concatenate if possible, and c) writing them into a binary format (`"wb"` mode in `fopen`) with a fixed size of `integer` bytes (for row and column) and `float` (for value) for storing the array of elements (row, column, and 1).
+
+Once the binary conversion is complete, we read the block of data using the same format used in writing, and we use compressed sparse row (CSR) format to build a matrix (in C++ implementation and in Python CuPy sparse extended package `csr_matrix` we use) for the challenge, spDNN calculation.
+
 - The original datasets are also available on Amazon S3, which can be found in the links on the Graph Challenge website: http://graphchallenge.mit.edu/data-sets.
-- At PNNL sites, `/qfs/projects/pacer/graphchallenge2022/DNN` has copies of these text files (.tsv) and binary files (under `binaries/*.bin`)
 
 ## Requirement
 
